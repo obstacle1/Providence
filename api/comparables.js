@@ -1,4 +1,13 @@
 export default async function handler(req, res) {
+  // Allow CORS
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -14,7 +23,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const res1 = await fetch("https://api.anthropic.com/v1/messages", {
+    const apiRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -26,30 +35,31 @@ export default async function handler(req, res) {
         max_tokens: 1500,
         messages: [{
           role: "user",
-          content: `You are an art market expert. Based on your knowledge of auction results, provide recent comparable sales (2018-2025) for works by ${artist}${medium ? ` in ${medium}` : ""}. 
+          content: `You are an art market expert. Based on your knowledge, provide recent comparable auction sales (2018-2025) for works by ${artist}${medium ? ` in ${medium}` : ""}.
 
-Return ONLY a raw JSON object, no markdown, no explanation:
+Return ONLY a raw JSON object. No markdown, no explanation, no code fences. Start with { and end with }.
+
 {
   "artist": "${artist}",
-  "marketSummary": "2-3 sentences on this artist's recent market performance and trajectory",
+  "marketSummary": "2-3 sentences on recent market performance",
   "trend": "rising",
   "comparables": [
     { "title": "Work Title", "year": 1955, "medium": "Oil on canvas", "salePrice": 1200000, "auctionHouse": "Christies", "saleDate": "2023-06" }
   ],
   "lowEstimate": 500000,
   "highEstimate": 2000000,
-  "notes": "What drives value for this artist"
+  "notes": "Key value drivers for this artist"
 }
 
-Include 5-6 realistic comparables based on your knowledge. trend must be rising, stable, or declining. salePrice as integer USD. Start response with { and end with }.`,
+Include 5-6 realistic comparables. trend must be rising, stable, or declining. salePrice as integer USD.`,
         }],
       }),
     });
 
-    const data = await res1.json();
+    const data = await apiRes.json();
 
-    if (!res1.ok) {
-      return res.status(500).json({ error: JSON.stringify(data) });
+    if (!apiRes.ok) {
+      return res.status(500).json({ error: "Anthropic API error", details: data });
     }
 
     const text = (data.content || [])
