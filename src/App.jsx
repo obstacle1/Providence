@@ -48,39 +48,87 @@ function parseCSV(text) {
   return lines.slice(1).map((line) => { const vals = line.split(",").map((v) => v.trim()); const obj = {}; headers.forEach((h, i) => (obj[h] = vals[i] || "")); return obj; });
 }
 
-async function callClaude(messages, useSearch = false) {
-  const body = { model: "claude-sonnet-4-6", max_tokens: 2000, messages };
-  if (useSearch) body.tools = [{ type: "web_search_20250305", name: "web_search" }];
-  const res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  if (!res.ok) { const txt = await res.text(); throw new Error(`API ${res.status}: ${txt.slice(0, 80)}`); }
-  return res.json();
-}
-
-function extractText(data) { return (data.content||[]).filter((b)=>b.type==="text").map((b)=>b.text).join("\n").trim(); }
-
-function tryParseJSON(str) {
-  const cleaned = str.replace(/```json\s*/gi,"").replace(/```\s*/g,"").trim();
-  try { return JSON.parse(cleaned); } catch (_) {}
-  const s = cleaned.indexOf("{"), e = cleaned.lastIndexOf("}");
-  if (s !== -1 && e > s) { try { return JSON.parse(cleaned.slice(s, e+1)); } catch (_) {} }
-  return null;
-}
-
+// ── AI fetch — calls /api/comparables serverless function when hosted,
+//    falls back to direct Anthropic API when running in Claude.ai ─────────────
 async function fetchComparables(artist, medium, category) {
-  const searchData = await callClaude([{ role: "user", content: `Search for recent auction results (2020–2025) for works by ${artist}${medium?`, particularly ${medium}`:""} works. Find 5–7 real hammer prices from Christie's, Sotheby's, Phillips, or Bonhams. List each result with: work title, year made, medium, sale price in USD, auction house, and sale date (YYYY-MM format). Also note the general market trend (rising/stable/declining) and what drives value for this artist.` }], true);
+  const prompt_search = `Search for recent auction results (2020–2025) for works by ${artist}${medium ? `, particularly ${medium}` : ""} works. Find 5–7 real hammer prices from Christie's, Sotheby's, Phillips, or Bonhams. List each result with: work title, year made, medium, sale price in USD, auction house, and sale date (YYYY-MM format). Also note the general market trend (rising/stable/declining) and what drives value for this artist.`;
+
+  const prompt_json = (searchText) => `Convert the following auction research into a JSON object. Return ONLY the JSON — no explanation, no markdown, no code fences. Start with { and end with }.
+
+Research:
+${searchText}
+
+Required JSON shape:
+{
+  "artist": "${artist}",
+  "marketSummary": "2-3 sentence summary of market performance",
+  "trend": "rising",
+  "comparables": [
+    { "title": "Work Title", "year": 1955, "medium": "Oil on canvas", "salePrice": 1200000, "auctionHouse": "Christie's", "saleDate": "2023-06" }
+  ],
+  "lowEstimate": 500000,
+  "highEstimate": 2000000,
+  "notes": "Key value drivers"
+}
+
+Rules: trend must be "rising", "stable", or "declining". salePrice in USD as a number. Return only the JSON object.`;
+
+  // Try serverless proxy first (works when hosted on Vercel with API key set)
+  try {
+    const res = await fetch("/api/comparables", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ artist, medium, category }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.comparables) return data;
+    }
+  } catch (_) {}
+
+  // Fallback: direct Anthropic API (works in Claude.ai artifacts)
+  const callClaude = async (messages, useSearch = false) => {
+    const body = { model: "claude-sonnet-4-6", max_tokens: 2000, messages };
+    if (useSearch) body.tools = [{ type: "web_search_20250305", name: "web_search" }];
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`API ${res.status}`);
+    return res.json();
+  };
+
+  const extractText = (data) => (data.content||[]).filter((b)=>b.type==="text").map((b)=>b.text).join("\n").trim();
+
+  const tryParseJSON = (str) => {
+    const c = str.replace(/```json\s*/gi,"").replace(/```\s*/g,"").trim();
+    try { return JSON.parse(c); } catch (_) {}
+    const s = c.indexOf("{"), e = c.lastIndexOf("}");
+    if (s !== -1 && e > s) { try { return JSON.parse(c.slice(s, e+1)); } catch (_) {} }
+    return null;
+  };
+
+  const searchData = await callClaude([{ role:"user", content: prompt_search }], true);
   const searchText = extractText(searchData);
-  if (!searchText) throw new Error("No search results returned");
-  const jsonData = await callClaude([{ role: "user", content: `Convert the following auction research into a JSON object. Return ONLY the JSON — no explanation, no markdown, no code fences. Start with { and end with }.\n\nResearch:\n${searchText}\n\nRequired JSON shape:\n{\n  "artist": "${artist}",\n  "marketSummary": "2-3 sentence summary",\n  "trend": "rising",\n  "comparables": [{ "title": "Work Title", "year": 1955, "medium": "Oil on canvas", "salePrice": 1200000, "auctionHouse": "Christie's", "saleDate": "2023-06" }],\n  "lowEstimate": 500000,\n  "highEstimate": 2000000,\n  "notes": "Key value drivers"\n}\n\nRules: trend must be "rising", "stable", or "declining". salePrice in USD as a number. Return only the JSON object.` }], false);
+  if (!searchText) throw new Error("No search results");
+
+  const jsonData = await callClaude([{ role:"user", content: prompt_json(searchText) }], false);
   const jsonText = extractText(jsonData);
   if (!jsonText) throw new Error("No JSON response");
+
   const parsed = tryParseJSON(jsonText);
-  if (!parsed) throw new Error("Could not parse JSON — please try again");
+  if (!parsed) throw new Error("Could not parse response — please try again");
   return parsed;
 }
 
 const C = { bg:"#0F0E0C", card:"#161410", border:"#252019", gold:"#C9A84C", goldFaint:"#C9A84C22", text:"#E4DCCF", muted:"#8A7A68", dim:"#5A5044", green:"#6FA87A", red:"#A8706F", inner:"#121009", active:"#1C1914" };
 
-const mkBtn = (variant="primary", extra={}) => ({ background: variant==="primary"?C.gold:variant==="danger"?"#5C1F1F":"transparent", color: variant==="primary"?C.bg:variant==="danger"?"#E87070":C.gold, border:`1px solid ${variant==="primary"?C.gold:variant==="danger"?"#7A2A2A":C.border}`, padding:"8px 16px", cursor:"pointer", fontSize:11, letterSpacing:"0.1em", textTransform:"uppercase", borderRadius:2, fontFamily:"Georgia, serif", whiteSpace:"nowrap", flexShrink:0, ...extra });
+const mkBtn = (variant="primary", extra={}) => ({
+  background: variant==="primary"?C.gold:variant==="danger"?"#3D1515":"transparent",
+  color: variant==="primary"?C.bg:variant==="danger"?"#C97070":C.gold,
+  border:`1px solid ${variant==="primary"?C.gold:variant==="danger"?"#6B2525":C.border}`,
+  padding:"7px 14px", cursor:"pointer", fontSize:10, letterSpacing:"0.1em",
+  textTransform:"uppercase", borderRadius:2, fontFamily:"Georgia, serif", whiteSpace:"nowrap", ...extra,
+});
 const mkInput = (extra={}) => ({ background:C.inner, border:`1px solid ${C.border}`, color:C.text, padding:"8px 10px", borderRadius:2, fontSize:13, width:"100%", fontFamily:"Georgia, serif", outline:"none", boxSizing:"border-box", ...extra });
 
 const LBL  = { fontSize:9, letterSpacing:"0.18em", textTransform:"uppercase", color:C.dim, marginBottom:4, display:"block" };
@@ -115,14 +163,12 @@ function ComparablesPanel({ object }) {
   const tC = !data?C.dim:data.trend==="rising"?C.green:data.trend==="declining"?C.red:C.muted;
   const tA = data?.trend==="rising"?"▲":data?.trend==="declining"?"▼":"◆";
   const tL = data?.trend?data.trend[0].toUpperCase()+data.trend.slice(1):"—";
-
   let vsMarket = null;
   if (currentVal&&data?.lowEstimate&&data?.highEstimate) {
     if (currentVal<data.lowEstimate) vsMarket={label:"Below range",color:C.gold};
     else if (currentVal>data.highEstimate) vsMarket={label:"Above range",color:C.gold};
     else vsMarket={label:"Within range",color:C.green};
   }
-
   const compChart = (data?.comparables||[]).filter((c)=>c.salePrice&&c.saleDate).sort((a,b)=>a.saleDate.localeCompare(b.saleDate)).map((c)=>({ date:fmtAxis(c.saleDate), comp:c.salePrice }));
 
   return (
@@ -152,30 +198,13 @@ function ComparablesPanel({ object }) {
               <div style={{ fontSize:9, letterSpacing:"0.18em", textTransform:"uppercase", color:C.dim, marginBottom:7 }}>Recent Sales</div>
               {data.comparables.map((c,i)=>(
                 <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", padding:"9px 0", borderBottom:`1px solid ${C.border}`, gap:10 }}>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:13, color:C.text, marginBottom:1, wordBreak:"break-word" }}>{c.title||"Untitled"}</div>
-                    <div style={{ fontSize:11, color:C.dim }}>{[c.medium,c.year,c.auctionHouse].filter(Boolean).join(" · ")}</div>
-                  </div>
-                  <div style={{ textAlign:"right", flexShrink:0 }}>
-                    <div style={{ fontSize:13, color:C.gold }}>{c.salePrice?fmt(c.salePrice):"—"}</div>
-                    <div style={{ fontSize:11, color:C.dim, marginTop:1 }}>{c.saleDate?fmtAxis(c.saleDate):""}</div>
-                  </div>
+                  <div style={{ flex:1, minWidth:0 }}><div style={{ fontSize:13, color:C.text, marginBottom:1, wordBreak:"break-word" }}>{c.title||"Untitled"}</div><div style={{ fontSize:11, color:C.dim }}>{[c.medium,c.year,c.auctionHouse].filter(Boolean).join(" · ")}</div></div>
+                  <div style={{ textAlign:"right", flexShrink:0 }}><div style={{ fontSize:13, color:C.gold }}>{c.salePrice?fmt(c.salePrice):"—"}</div><div style={{ fontSize:11, color:C.dim, marginTop:1 }}>{c.saleDate?fmtAxis(c.saleDate):""}</div></div>
                 </div>
               ))}
             </div>
           )}
-          {compChart.length>=2&&(<>
-            <div style={{ fontSize:9, letterSpacing:"0.18em", textTransform:"uppercase", color:C.dim, marginBottom:7 }}>Sale Prices Over Time</div>
-            <ResponsiveContainer width="100%" height={100}>
-              <LineChart data={compChart} margin={{ top:2, right:4, left:0, bottom:0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={C.active} />
-                <XAxis dataKey="date" tick={{ fill:C.dim, fontSize:9 }} tickLine={false} axisLine={{ stroke:C.border }} />
-                <YAxis tickFormatter={fmtShort} tick={{ fill:C.dim, fontSize:9 }} tickLine={false} axisLine={false} width={44} />
-                <Tooltip content={<ChartTip />} />
-                <Line type="monotone" dataKey="comp" stroke="#7B9E87" strokeWidth={2} dot={{ fill:"#7B9E87", r:3 }} name="Sale price" />
-              </LineChart>
-            </ResponsiveContainer>
-          </>)}
+          {compChart.length>=2&&(<><div style={{ fontSize:9, letterSpacing:"0.18em", textTransform:"uppercase", color:C.dim, marginBottom:7 }}>Sale Prices Over Time</div><ResponsiveContainer width="100%" height={100}><LineChart data={compChart} margin={{ top:2, right:4, left:0, bottom:0 }}><CartesianGrid strokeDasharray="3 3" stroke={C.active} /><XAxis dataKey="date" tick={{ fill:C.dim, fontSize:9 }} tickLine={false} axisLine={{ stroke:C.border }} /><YAxis tickFormatter={fmtShort} tick={{ fill:C.dim, fontSize:9 }} tickLine={false} axisLine={false} width={44} /><Tooltip content={<ChartTip />} /><Line type="monotone" dataKey="comp" stroke="#7B9E87" strokeWidth={2} dot={{ fill:"#7B9E87", r:3 }} name="Sale price" /></LineChart></ResponsiveContainer></>)}
           <div style={{ fontSize:10, color:C.dim, marginTop:12, borderTop:`1px solid ${C.border}`, paddingTop:9, lineHeight:1.5 }}>Public auction records via live web search. For research only — not a formal appraisal.</div>
         </>
       )}
@@ -183,15 +212,12 @@ function ComparablesPanel({ object }) {
   );
 }
 
-// ── Confirm Delete Modal ──────────────────────────────────────────────────────
 function ConfirmModal({ title, onConfirm, onCancel }) {
   return (
     <div style={{ position:"fixed", inset:0, background:"#000000BB", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
       <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:4, padding:"24px 20px", maxWidth:320, width:"100%" }}>
         <div style={{ fontSize:15, color:C.text, marginBottom:8 }}>Delete object?</div>
-        <div style={{ fontSize:13, color:C.muted, marginBottom:20, lineHeight:1.6 }}>
-          <span style={{ color:C.gold }}>{title}</span> and all its valuations will be permanently removed.
-        </div>
+        <div style={{ fontSize:13, color:C.muted, marginBottom:20, lineHeight:1.6 }}><span style={{ color:C.gold }}>{title}</span> and all its valuations will be permanently removed.</div>
         <div style={{ display:"flex", gap:10 }}>
           <button style={mkBtn("danger")} onClick={onConfirm}>Delete</button>
           <button style={mkBtn("ghost")} onClick={onCancel}>Cancel</button>
@@ -225,10 +251,7 @@ export default function App() {
     return dates.map((date)=>{ let total=0; objects.forEach((obj)=>{ const s=[...obj.valuations].sort((a,b)=>a.date.localeCompare(b.date)); const before=s.filter((v)=>v.date<=date); if(before.length) total+=before[before.length-1].value; }); return { date:fmtAxis(date), total }; });
   }, [objects]);
 
-  const objectChart = useMemo(()=>{
-    if (!selected) return [];
-    return [...selected.valuations].sort((a,b)=>a.date.localeCompare(b.date)).map((v)=>({ date:fmtAxis(v.date), value:v.value }));
-  }, [selected]);
+  const objectChart = useMemo(()=>{ if(!selected) return []; return [...selected.valuations].sort((a,b)=>a.date.localeCompare(b.date)).map((v)=>({ date:fmtAxis(v.date), value:v.value })); }, [selected]);
 
   const portStats = useMemo(()=>{
     const totals = objects.map((o)=>{ const s=[...o.valuations].sort((a,b)=>a.date.localeCompare(b.date)); return { first:s[0]?.value||0, last:s[s.length-1]?.value||0 }; });
@@ -243,59 +266,23 @@ export default function App() {
     return { first, last, change:last.value-first.value, changePct:pct(first.value,last.value) };
   }, [selected]);
 
-  const addObject = () => {
-    if (!newObj.title||!newObj.artist) return;
-    const id = Date.now();
-    setObjects((p)=>[...p,{ ...newObj, id, year:+newObj.year, valuations:[] }]);
-    setNewObj({ title:"", artist:"", medium:"", year:"", category:"Painting" });
-    setSelectedId(id); setView("object"); notify("Object added");
-  };
-
-  const addValuation = () => {
-    if (!newVal.date||!newVal.value||!selectedId) return;
-    setObjects((p)=>p.map((o)=>o.id===selectedId?{ ...o, valuations:[...o.valuations,{ ...newVal, value:+newVal.value }] }:o));
-    setNewVal({ date:"", value:"", note:"" }); setShowAddVal(false); notify("Valuation saved");
-  };
-
-  // ── Edit object ─────────────────────────────────────────────────────────────
+  const addObject = () => { if(!newObj.title||!newObj.artist) return; const id=Date.now(); setObjects((p)=>[...p,{ ...newObj, id, year:+newObj.year, valuations:[] }]); setNewObj({ title:"", artist:"", medium:"", year:"", category:"Painting" }); setSelectedId(id); setView("object"); notify("Object added"); };
+  const addValuation = () => { if(!newVal.date||!newVal.value||!selectedId) return; setObjects((p)=>p.map((o)=>o.id===selectedId?{ ...o, valuations:[...o.valuations,{ ...newVal, value:+newVal.value }] }:o)); setNewVal({ date:"", value:"", note:"" }); setShowAddVal(false); notify("Valuation saved"); };
   const startEdit = () => { setEditObj({ ...selected }); setEditMode(true); };
-  const saveEdit = () => {
-    setObjects((p)=>p.map((o)=>o.id===selectedId?{ ...o, ...editObj, year:+editObj.year }:o));
-    setEditMode(false); setEditObj(null); notify("Object updated");
-  };
+  const saveEdit = () => { setObjects((p)=>p.map((o)=>o.id===selectedId?{ ...o, ...editObj, year:+editObj.year }:o)); setEditMode(false); setEditObj(null); notify("Object updated"); };
   const cancelEdit = () => { setEditMode(false); setEditObj(null); };
+  const deleteObject = () => { setObjects((p)=>p.filter((o)=>o.id!==selectedId)); setSelectedId(null); setView("portfolio"); setConfirmDelete(false); notify("Object deleted"); };
+  const importParse = () => { try { const rows=parseCSV(importText); if(!rows.length) throw new Error("No rows"); setImportMapped(rows); setImportStep(2); setImportError(""); } catch(e) { setImportError(e.message); } };
+  const importConfirm = () => { if(!importMapped) return; const grouped={}; importMapped.forEach((row)=>{ const key=`${row.title}|${row.artist}`; if(!grouped[key]) grouped[key]={ title:row.title, artist:row.artist, medium:row.medium||"", year:+(row.year||0), category:row.category||"Painting", valuations:[] }; if(row.date&&row.value) grouped[key].valuations.push({ date:row.date, value:+row.value, note:row.note||"" }); }); const objs=Object.values(grouped).map((o,i)=>({ ...o, id:Date.now()+i })); setObjects((p)=>[...p,...objs]); setImportText(""); setImportMapped(null); setImportStep(1); setView("portfolio"); notify(`Imported ${objs.length} object(s)`); };
 
-  // ── Delete object ────────────────────────────────────────────────────────────
-  const confirmDeleteObject = () => setConfirmDelete(true);
-  const deleteObject = () => {
-    setObjects((p)=>p.filter((o)=>o.id!==selectedId));
-    setSelectedId(null); setView("portfolio");
-    setConfirmDelete(false); notify("Object deleted");
-  };
-
-  const importParse = () => { try { const rows=parseCSV(importText); if(!rows.length) throw new Error("No rows found"); setImportMapped(rows); setImportStep(2); setImportError(""); } catch(e) { setImportError(e.message); } };
-  const importConfirm = () => {
-    if (!importMapped) return;
-    const grouped = {};
-    importMapped.forEach((row)=>{ const key=`${row.title}|${row.artist}`; if(!grouped[key]) grouped[key]={ title:row.title, artist:row.artist, medium:row.medium||"", year:+(row.year||0), category:row.category||"Painting", valuations:[] }; if(row.date&&row.value) grouped[key].valuations.push({ date:row.date, value:+row.value, note:row.note||"" }); });
-    const objs = Object.values(grouped).map((o,i)=>({ ...o, id:Date.now()+i }));
-    setObjects((p)=>[...p,...objs]); setImportText(""); setImportMapped(null); setImportStep(1); setView("portfolio"); notify(`Imported ${objs.length} object(s)`);
-  };
-
-  const NAV = [
-    { key:"portfolio", label:"Portfolio" },
-    { key:"object",    label:"Object", disabled:!selected },
-    { key:"add",       label:"+ Add" },
-    { key:"import",    label:"CSV" },
-  ];
+  const NAV = [{ key:"portfolio", label:"Portfolio" }, { key:"object", label:"Object", disabled:!selected }, { key:"add", label:"+ Add" }, { key:"import", label:"CSV" }];
 
   return (
     <div style={{ background:C.bg, minHeight:"100vh", color:C.text, fontFamily:"'Georgia', serif", overflowX:"hidden" }}>
 
-      {confirmDelete && selected && (
-        <ConfirmModal title={selected.title} onConfirm={deleteObject} onCancel={()=>setConfirmDelete(false)} />
-      )}
+      {confirmDelete&&selected&&<ConfirmModal title={selected.title} onConfirm={deleteObject} onCancel={()=>setConfirmDelete(false)} />}
 
+      {/* Header */}
       <div style={{ borderBottom:`1px solid ${C.border}`, padding:"14px 16px", boxSizing:"border-box", width:"100%" }}>
         <div style={{ marginBottom:11 }}>
           <div style={{ fontSize:17, letterSpacing:"0.14em", color:C.gold }}>PROVENANCE</div>
@@ -322,20 +309,11 @@ export default function App() {
             </div>
             <div style={CARD}>
               <div style={SEC}>Portfolio Value Over Time</div>
-              <ResponsiveContainer width="100%" height={190}>
-                <LineChart data={portfolioChart} margin={{ top:4, right:4, left:0, bottom:0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={C.active} />
-                  <XAxis dataKey="date" tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={{ stroke:C.border }} />
-                  <YAxis tickFormatter={fmtShort} tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={false} width={44} />
-                  <Tooltip content={<ChartTip />} />
-                  <Line type="monotone" dataKey="total" stroke={C.gold} strokeWidth={2} dot={{ fill:C.gold, r:3 }} activeDot={{ r:5 }} name="Total Value" />
-                </LineChart>
-              </ResponsiveContainer>
+              <ResponsiveContainer width="100%" height={190}><LineChart data={portfolioChart} margin={{ top:4, right:4, left:0, bottom:0 }}><CartesianGrid strokeDasharray="3 3" stroke={C.active} /><XAxis dataKey="date" tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={{ stroke:C.border }} /><YAxis tickFormatter={fmtShort} tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={false} width={44} /><Tooltip content={<ChartTip />} /><Line type="monotone" dataKey="total" stroke={C.gold} strokeWidth={2} dot={{ fill:C.gold, r:3 }} activeDot={{ r:5 }} name="Total Value" /></LineChart></ResponsiveContainer>
             </div>
             <div style={SEC}>Objects</div>
             {objects.map((obj)=>{
-              const s=[...obj.valuations].sort((a,b)=>a.date.localeCompare(b.date));
-              const cur=s[s.length-1]?.value||0, fst=s[0]?.value||0, g=fst?pct(fst,cur):null;
+              const s=[...obj.valuations].sort((a,b)=>a.date.localeCompare(b.date)), cur=s[s.length-1]?.value||0, fst=s[0]?.value||0, g=fst?pct(fst,cur):null;
               return (
                 <div key={obj.id} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px", cursor:"pointer", borderRadius:2, marginBottom:4, background:selectedId===obj.id?C.active:"transparent", border:`1px solid ${selectedId===obj.id?C.gold+"44":"transparent"}`, boxSizing:"border-box" }}
                   onClick={()=>{ setSelectedId(obj.id); setView("object"); }}>
@@ -356,34 +334,16 @@ export default function App() {
         {/* ── OBJECT ── */}
         {view==="object"&&selected&&(
           <>
-            {/* Edit mode */}
-            {editMode && editObj ? (
+            {editMode&&editObj ? (
               <div style={{ marginBottom:16 }}>
                 <div style={{ fontSize:16, color:C.text, marginBottom:14 }}>Edit Object</div>
                 <div style={CARD}>
                   <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:11, marginBottom:13 }}>
-                    <div style={{ gridColumn:"1/-1" }}>
-                      <label style={LBL}>Title</label>
-                      <input style={mkInput()} value={editObj.title} onChange={(e)=>setEditObj({...editObj,title:e.target.value})} />
-                    </div>
-                    <div>
-                      <label style={LBL}>Artist / Maker</label>
-                      <input style={mkInput()} value={editObj.artist} onChange={(e)=>setEditObj({...editObj,artist:e.target.value})} />
-                    </div>
-                    <div>
-                      <label style={LBL}>Year</label>
-                      <input style={mkInput()} type="number" value={editObj.year} onChange={(e)=>setEditObj({...editObj,year:e.target.value})} />
-                    </div>
-                    <div>
-                      <label style={LBL}>Medium</label>
-                      <input style={mkInput()} value={editObj.medium} onChange={(e)=>setEditObj({...editObj,medium:e.target.value})} />
-                    </div>
-                    <div>
-                      <label style={LBL}>Category</label>
-                      <select style={mkInput()} value={editObj.category} onChange={(e)=>setEditObj({...editObj,category:e.target.value})}>
-                        {["Painting","Sculpture","Works on Paper","Photography","Decorative Arts","Jewellery","Furniture","Other"].map((c)=><option key={c}>{c}</option>)}
-                      </select>
-                    </div>
+                    <div style={{ gridColumn:"1/-1" }}><label style={LBL}>Title</label><input style={mkInput()} value={editObj.title} onChange={(e)=>setEditObj({...editObj,title:e.target.value})} /></div>
+                    <div><label style={LBL}>Artist / Maker</label><input style={mkInput()} value={editObj.artist} onChange={(e)=>setEditObj({...editObj,artist:e.target.value})} /></div>
+                    <div><label style={LBL}>Year</label><input style={mkInput()} type="number" value={editObj.year} onChange={(e)=>setEditObj({...editObj,year:e.target.value})} /></div>
+                    <div><label style={LBL}>Medium</label><input style={mkInput()} value={editObj.medium} onChange={(e)=>setEditObj({...editObj,medium:e.target.value})} /></div>
+                    <div><label style={LBL}>Category</label><select style={mkInput()} value={editObj.category} onChange={(e)=>setEditObj({...editObj,category:e.target.value})}>{["Painting","Sculpture","Works on Paper","Photography","Decorative Arts","Jewellery","Furniture","Other"].map((c)=><option key={c}>{c}</option>)}</select></div>
                   </div>
                   <div style={{ display:"flex", gap:10 }}>
                     <button style={mkBtn("primary")} onClick={saveEdit}>Save Changes</button>
@@ -393,16 +353,16 @@ export default function App() {
               </div>
             ) : (
               <>
-                {/* Object header with Edit + Delete */}
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10, marginBottom:16 }}>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:19, marginBottom:3, lineHeight:1.25, wordBreak:"break-word" }}>{selected.title}</div>
+                {/* ── Object header — title full width, buttons on their own row ── */}
+                <div style={{ marginBottom:16 }}>
+                  <div style={{ marginBottom:10 }}>
+                    <div style={{ fontSize:22, lineHeight:1.2, marginBottom:3 }}>{selected.title}</div>
                     <div style={{ fontSize:12, color:C.muted }}>{selected.artist} · {selected.year} · {selected.medium}</div>
                   </div>
-                  <div style={{ display:"flex", gap:6, flexShrink:0 }}>
-                    <button style={mkBtn("ghost",{ fontSize:10, padding:"5px 10px" })} onClick={()=>setView("portfolio")}>← Back</button>
-                    <button style={mkBtn("secondary",{ fontSize:10, padding:"5px 10px" })} onClick={startEdit}>Edit</button>
-                    <button style={mkBtn("danger",{ fontSize:10, padding:"5px 10px" })} onClick={confirmDeleteObject}>Delete</button>
+                  <div style={{ display:"flex", gap:6 }}>
+                    <button style={mkBtn("ghost",{ fontSize:10, padding:"5px 12px" })} onClick={()=>setView("portfolio")}>← Back</button>
+                    <button style={mkBtn("secondary",{ fontSize:10, padding:"5px 12px" })} onClick={startEdit}>Edit</button>
+                    <button style={mkBtn("danger",{ fontSize:10, padding:"5px 12px" })} onClick={()=>setConfirmDelete(true)}>Delete</button>
                   </div>
                 </div>
 
@@ -418,27 +378,16 @@ export default function App() {
                 {objectChart.length>0&&(
                   <div style={CARD}>
                     <div style={SEC}>Value History</div>
-                    <ResponsiveContainer width="100%" height={170}>
-                      <LineChart data={objectChart} margin={{ top:4, right:4, left:0, bottom:0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke={C.active} />
-                        <XAxis dataKey="date" tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={{ stroke:C.border }} />
-                        <YAxis tickFormatter={fmtShort} tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={false} width={44} />
-                        <Tooltip content={<ChartTip />} />
-                        <Line type="monotone" dataKey="value" stroke={C.gold} strokeWidth={2} dot={{ fill:C.gold, r:4 }} activeDot={{ r:6 }} name={selected.artist} />
-                      </LineChart>
-                    </ResponsiveContainer>
+                    <ResponsiveContainer width="100%" height={170}><LineChart data={objectChart} margin={{ top:4, right:4, left:0, bottom:0 }}><CartesianGrid strokeDasharray="3 3" stroke={C.active} /><XAxis dataKey="date" tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={{ stroke:C.border }} /><YAxis tickFormatter={fmtShort} tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={false} width={44} /><Tooltip content={<ChartTip />} /><Line type="monotone" dataKey="value" stroke={C.gold} strokeWidth={2} dot={{ fill:C.gold, r:4 }} activeDot={{ r:6 }} name={selected.artist} /></LineChart></ResponsiveContainer>
                   </div>
                 )}
 
                 <ComparablesPanel key={selected.id} object={selected} />
 
-                {/* Valuation Ledger */}
                 <div style={CARD}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, marginBottom:12 }}>
                     <div style={{ fontSize:9, letterSpacing:"0.22em", textTransform:"uppercase", color:C.dim }}>Valuation Ledger</div>
-                    <button style={mkBtn("secondary",{ fontSize:10, padding:"5px 11px" })} onClick={()=>setShowAddVal((v)=>!v)}>
-                      {showAddVal?"Cancel":"+ Add"}
-                    </button>
+                    <button style={mkBtn("secondary",{ fontSize:10, padding:"5px 11px" })} onClick={()=>setShowAddVal((v)=>!v)}>{showAddVal?"Cancel":"+ Add"}</button>
                   </div>
                   {showAddVal&&(
                     <div style={{ background:C.inner, border:`1px solid ${C.border}`, borderRadius:2, padding:"13px", marginBottom:13 }}>
@@ -471,7 +420,7 @@ export default function App() {
           </>
         )}
 
-        {/* ── ADD OBJECT ── */}
+        {/* ── ADD ── */}
         {view==="add"&&(
           <div>
             <div style={{ fontSize:17, marginBottom:18 }}>Add Object</div>
