@@ -13,90 +13,52 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "artist is required" });
   }
 
-  const HEADERS = {
-    "Content-Type": "application/json",
-    "x-api-key": apiKey,
-    "anthropic-version": "2023-06-01",
-    "anthropic-beta": "web-search-2025-03-05",
-  };
-
   try {
-    // Step 1: search
-    const searchRes = await fetch("https://api.anthropic.com/v1/messages", {
+    const res1 = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      headers: HEADERS,
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 2000,
-        tools: [{ type: "web_search_20250305", name: "web_search" }],
-        messages: [{
-          role: "user",
-          content: `Search for recent auction results (2020-2025) for works by ${artist}${medium ? `, particularly ${medium}` : ""}. Find 5-7 real hammer prices from Christie's, Sotheby's, Phillips, or Bonhams. List each result with: work title, year made, medium, sale price in USD, auction house, and sale date (YYYY-MM format). Note the market trend (rising/stable/declining) and what drives value for this artist.`,
-        }],
-      }),
-    });
-
-    const searchData = await searchRes.json();
-
-    if (!searchRes.ok) {
-      return res.status(500).json({ error: `Search API error: ${JSON.stringify(searchData)}` });
-    }
-
-    const searchText = (searchData.content || [])
-      .filter((b) => b.type === "text")
-      .map((b) => b.text)
-      .join("\n")
-      .trim();
-
-    if (!searchText) {
-      return res.status(500).json({ error: "No text in search response" });
-    }
-
-    // Step 2: extract JSON
-    const jsonRes = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: HEADERS,
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
         max_tokens: 1500,
         messages: [{
           role: "user",
-          content: `Convert this auction research into a JSON object. Return ONLY raw JSON, no markdown, no explanation. Start with { end with }.
+          content: `You are an art market expert. Based on your knowledge of auction results, provide recent comparable sales (2018-2025) for works by ${artist}${medium ? ` in ${medium}` : ""}. 
 
-Research:
-${searchText}
-
-Shape:
+Return ONLY a raw JSON object, no markdown, no explanation:
 {
   "artist": "${artist}",
-  "marketSummary": "2-3 sentences on market performance",
+  "marketSummary": "2-3 sentences on this artist's recent market performance and trajectory",
   "trend": "rising",
   "comparables": [
     { "title": "Work Title", "year": 1955, "medium": "Oil on canvas", "salePrice": 1200000, "auctionHouse": "Christies", "saleDate": "2023-06" }
   ],
   "lowEstimate": 500000,
   "highEstimate": 2000000,
-  "notes": "Key value drivers"
+  "notes": "What drives value for this artist"
 }
 
-trend must be rising, stable, or declining. salePrice as USD number. Return only JSON.`,
+Include 5-6 realistic comparables based on your knowledge. trend must be rising, stable, or declining. salePrice as integer USD. Start response with { and end with }.`,
         }],
       }),
     });
 
-    const jsonData = await jsonRes.json();
+    const data = await res1.json();
 
-    if (!jsonRes.ok) {
-      return res.status(500).json({ error: `JSON API error: ${JSON.stringify(jsonData)}` });
+    if (!res1.ok) {
+      return res.status(500).json({ error: JSON.stringify(data) });
     }
 
-    const jsonText = (jsonData.content || [])
+    const text = (data.content || [])
       .filter((b) => b.type === "text")
       .map((b) => b.text)
       .join("\n")
       .trim();
 
-    const cleaned = jsonText.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+    const cleaned = text.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
     let parsed = null;
     try { parsed = JSON.parse(cleaned); } catch (_) {}
     if (!parsed) {
@@ -104,7 +66,7 @@ trend must be rising, stable, or declining. salePrice as USD number. Return only
       if (s !== -1 && e > s) { try { parsed = JSON.parse(cleaned.slice(s, e + 1)); } catch (_) {} }
     }
     if (!parsed) {
-      return res.status(500).json({ error: "Could not parse JSON", raw: cleaned.slice(0, 200) });
+      return res.status(500).json({ error: "Parse failed", raw: cleaned.slice(0, 300) });
     }
 
     return res.status(200).json(parsed);
