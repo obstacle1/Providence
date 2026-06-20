@@ -1,43 +1,21 @@
 export default async function handler(req, res) {
-  // Allow CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
+  if (req.method === "OPTIONS") return res.status(200).end();
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
-
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({ error: "API key not configured" });
-  }
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: "API key not configured" });
 
   const { artist, medium } = req.body || {};
-  if (!artist) {
-    return res.status(400).json({ error: "artist is required" });
-  }
+  if (!artist) return res.status(400).json({ error: "artist is required" });
 
   try {
-    const apiRes = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 1500,
-        messages: [{
-          role: "user",
-          content: `You are an art market expert. Based on your knowledge, provide recent comparable auction sales (2018-2025) for works by ${artist}${medium ? ` in ${medium}` : ""}.
+    const prompt = `You are an art market expert. Provide recent comparable auction sales (2018-2025) for works by ${artist}${medium ? ` in ${medium}` : ""}.
 
-Return ONLY a raw JSON object. No markdown, no explanation, no code fences. Start with { and end with }.
+Return ONLY a raw JSON object. No markdown, no explanation. Start with { and end with }.
 
 {
   "artist": "${artist}",
@@ -48,36 +26,39 @@ Return ONLY a raw JSON object. No markdown, no explanation, no code fences. Star
   ],
   "lowEstimate": 500000,
   "highEstimate": 2000000,
-  "notes": "Key value drivers for this artist"
+  "notes": "Key value drivers"
 }
 
-Include 5-6 realistic comparables. trend must be rising, stable, or declining. salePrice as integer USD.`,
-        }],
-      }),
-    });
+Include 5-6 realistic comparables. trend must be rising, stable, or declining. salePrice as integer USD.`;
+
+    const apiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.3, maxOutputTokens: 1500 },
+        }),
+      }
+    );
 
     const data = await apiRes.json();
 
     if (!apiRes.ok) {
-      return res.status(500).json({ error: "Anthropic API error", details: data });
+      return res.status(500).json({ error: "Gemini API error", details: data });
     }
 
-    const text = (data.content || [])
-      .filter((b) => b.type === "text")
-      .map((b) => b.text)
-      .join("\n")
-      .trim();
-
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
     const cleaned = text.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+
     let parsed = null;
     try { parsed = JSON.parse(cleaned); } catch (_) {}
     if (!parsed) {
       const s = cleaned.indexOf("{"), e = cleaned.lastIndexOf("}");
       if (s !== -1 && e > s) { try { parsed = JSON.parse(cleaned.slice(s, e + 1)); } catch (_) {} }
     }
-    if (!parsed) {
-      return res.status(500).json({ error: "Parse failed", raw: cleaned.slice(0, 300) });
-    }
+    if (!parsed) return res.status(500).json({ error: "Parse failed", raw: cleaned.slice(0, 300) });
 
     return res.status(200).json(parsed);
 
