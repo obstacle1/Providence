@@ -1035,6 +1035,16 @@ function AdvisorApp() {
     setInviting(true);
     await db.patch("teams", teamId, { member_emails: [...teamMembers, email] });
     setTeamMembers(p => [...p, email]);
+    // Also add to allowed_emails
+    await db.post("allowed_emails", { email }).catch(() => {});
+    // Send invite email via Resend
+    try {
+      await fetch("/api/invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, inviterEmail: session.user.email }),
+      });
+    } catch(e) { console.error("Invite email failed:", e); }
     setInviteEmail("");
     setInviting(false);
     notify(`${email} invited!`);
