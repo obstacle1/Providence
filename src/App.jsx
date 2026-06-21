@@ -1135,12 +1135,18 @@ function AdvisorApp() {
       <div style={{ padding:"18px 16px", boxSizing:"border-box", width:"100%", maxWidth:860, margin:"0 auto" }}>
 
         {view==="portfolio"&&(<>
+          <div style={{ fontSize:9, letterSpacing:"0.18em", textTransform:"uppercase", color:C.dim, marginBottom:10 }}>Assets Under Management</div>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
-            <StatCard lbl="Total Value" val={fmt(portStats.cur)} />
-            <StatCard lbl="Total Gain" val={fmt(portStats.gain)} sub={`${portStats.gain>=0?"▲":"▼"} ${Math.abs(portStats.gainPct)}%`} subColor={portStats.gain>=0?C.green:C.red} />
-            <StatCard lbl="Objects" val={portfolioObjects.length} />
-            <StatCard lbl="Acquisition Cost" val={fmt(portStats.acq)} />
+            <StatCard lbl="Total AUM" val={fmt(calcPortStats(objects).cur)} />
+            <StatCard lbl="Total Gain" val={fmt(calcPortStats(objects).gain)} sub={`${calcPortStats(objects).gain>=0?"▲":"▼"} ${Math.abs(calcPortStats(objects).gainPct)}%`} subColor={calcPortStats(objects).gain>=0?C.green:C.red} />
+            <StatCard lbl="Total Objects" val={objects.length} />
+            <StatCard lbl="Total Clients" val={clients.length} />
           </div>
+          {clients.length>0&&<div style={CARD}>
+            <div style={SEC}>By Client</div>
+            {clients.map(c=>{ const cobjs=objects.filter(o=>o.client_id===c.id); const s=calcPortStats(cobjs); return cobjs.length>0?(<div key={c.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 0", borderBottom:`1px solid ${C.border}`, cursor:"pointer" }} onClick={()=>{ setView("clients"); setSelectedClient(c); }}><div><div style={{ fontSize:13, color:C.text }}>{c.name}</div><div style={{ fontSize:11, color:C.dim }}>{cobjs.length} object{cobjs.length!==1?"s":""}</div></div><div style={{ textAlign:"right" }}><div style={{ fontSize:13, color:C.gold }}>{fmt(s.cur)}</div><div style={{ fontSize:11, color:s.gain>=0?C.green:C.red }}>{s.gain>=0?"▲":"▼"} {Math.abs(s.gainPct)}%</div></div></div>):null; })}
+            {objects.filter(o=>!o.client_id).length>0&&<div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 0", borderBottom:`1px solid ${C.border}` }}><div><div style={{ fontSize:13, color:C.text }}>Unassigned</div><div style={{ fontSize:11, color:C.dim }}>{objects.filter(o=>!o.client_id).length} object{objects.filter(o=>!o.client_id).length!==1?"s":""}</div></div><div style={{ textAlign:"right" }}><div style={{ fontSize:13, color:C.gold }}>{fmt(calcPortStats(objects.filter(o=>!o.client_id)).cur)}</div></div></div>}
+          </div>}
           {portfolioChart.length>0&&<div style={CARD}><div style={SEC}>Portfolio Value Over Time</div><ResponsiveContainer width="100%" height={190}><LineChart data={portfolioChart} margin={{ top:4, right:4, left:0, bottom:0 }}><CartesianGrid strokeDasharray="3 3" stroke={C.active} /><XAxis dataKey="date" tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={{ stroke:C.border }} /><YAxis tickFormatter={fmtShort} tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={false} width={44} /><Tooltip content={<ChartTip />} /><Line type="monotone" dataKey="total" stroke={C.gold} strokeWidth={2} dot={{ fill:C.gold, r:3 }} activeDot={{ r:5 }} name="Total Value" /></LineChart></ResponsiveContainer></div>}
           {portfolioObjects.length===0&&<div style={{ textAlign:"center", padding:"40px 0", color:C.dim, fontSize:13 }}>No objects yet. Tap <span style={{ color:C.gold }}>+ Add</span> to get started.</div>}
           {portfolioObjects.length>0&&<>
