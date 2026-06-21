@@ -996,7 +996,7 @@ function AdvisorApp() {
                   <div style={{ gridColumn:"1/-1" }}>
                     <label style={LBL}>Photo</label>
                     {editObj.image_url && <img src={editObj.image_url} alt="" style={{ width:"100%", maxHeight:180, objectFit:"cover", borderRadius:2, marginBottom:8, display:"block" }} />}
-                    <input type="file" accept="image/*" capture="environment" style={{ display:"none" }} id="img-upload" onChange={async(e)=>{ const file=e.target.files[0]; if(!file) return; try { const url=await uploadImage(file,selectedId); setEditObj({...editObj,image_url:url}); } catch(err) { alert("Upload failed: "+err.message); } }} />
+                    <input type="file" accept="image/*" style={{ display:"none" }} id="img-upload" onChange={async(e)=>{ const file=e.target.files[0]; if(!file) return; try { const url=await uploadImage(file,selectedId); setEditObj({...editObj,image_url:url}); } catch(err) { alert("Upload failed: "+err.message); } }} />
                     <label htmlFor="img-upload" style={{ ...mkBtn("secondary",{ fontSize:10, padding:"7px 14px", display:"inline-block", cursor:"pointer" }) }}>{editObj.image_url?"📷 Change Photo":"📷 Add Photo"}</label>
                   </div>
                   <div><StarRating label="Enjoyment Index" value={editObj.enjoyment_index} onChange={v=>setEditObj({...editObj,enjoyment_index:v})} /></div>
