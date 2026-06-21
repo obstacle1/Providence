@@ -596,12 +596,9 @@ function LoginScreen() {
   return (
     <div style={{ background:C.bg, minHeight:"100vh", fontFamily:"Georgia, serif", color:C.text }}>
       {/* Hero */}
-      <div style={{ borderBottom:`1px solid ${C.border}`, padding:"14px 20px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-        <div>
-          <div style={{ fontSize:16, letterSpacing:"0.16em", color:C.gold }}>PROVENANCE</div>
-          <div style={{ fontSize:8, letterSpacing:"0.14em", color:C.dim, textTransform:"uppercase", marginTop:2, whiteSpace:"nowrap" }}>Collection · Value · Intelligence</div>
-        </div>
-
+      <div style={{ borderBottom:`1px solid ${C.border}`, padding:"14px 20px", textAlign:"center" }}>
+        <div style={{ fontSize:16, letterSpacing:"0.16em", color:C.gold }}>PROVENANCE</div>
+        <div style={{ fontSize:8, letterSpacing:"0.14em", color:C.dim, textTransform:"uppercase", marginTop:2 }}>Collection · Value · Intelligence</div>
       </div>
 
       <div style={{ padding:"48px 20px 32px", maxWidth:600, margin:"0 auto", textAlign:"center" }}>
