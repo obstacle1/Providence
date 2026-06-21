@@ -44,19 +44,23 @@ const db = {
 
 // ── Image upload ─────────────────────────────────────────────────────────────
 async function uploadImage(file, objectId) {
-  const ext = file.name.split('.').pop();
+  const ext = file.name.split('.').pop().toLowerCase();
   const path = `${objectId}-${Date.now()}.${ext}`;
+  const formData = new FormData();
+  formData.append("", file);
   const res = await fetch(`${SUPA_URL}/storage/v1/object/object-images/${path}`, {
     method: "POST",
     headers: {
       "apikey": SUPA_KEY,
       "Authorization": `Bearer ${SUPA_KEY}`,
-      "Content-Type": file.type,
       "x-upsert": "true",
     },
-    body: file,
+    body: formData,
   });
-  if (!res.ok) throw new Error("Upload failed");
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err || "Upload failed");
+  }
   return `${SUPA_URL}/storage/v1/object/public/object-images/${path}`;
 }
 
