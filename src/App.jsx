@@ -344,7 +344,10 @@ function PublicClientView() {
           {/* Client header */}
           <div style={{ marginBottom:20 }}>
             <div style={{ fontSize:24, marginBottom:4 }}>{client.name}</div>
-            <div style={{ fontSize:11, color:C.dim, letterSpacing:"0.08em" }}>Private Collection · {new Date().getFullYear()}</div>
+            <div style={{ fontSize:11, color:C.dim, letterSpacing:"0.08em" }}>
+              Private Collection · {new Date().getFullYear()}
+              {(() => { const allDates = objects.flatMap(o=>o.valuations.map(v=>v.date)).sort(); const last = allDates[allDates.length-1]; return last ? <span style={{ marginLeft:8, color:C.dim }}>· Updated {new Date(last).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span> : null; })()}
+            </div>
           </div>
 
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
