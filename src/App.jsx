@@ -5,8 +5,8 @@ import { BrowserRouter, Routes, Route, useParams } from "react-router-dom";
 
 // ── Responsive hook ──────────────────────────────────────────────────────────
 function useWindowWidth() {
-  const [width, setWidth] = React.useState(window.innerWidth);
-  React.useEffect(() => {
+  const [width, setWidth] = useState(typeof window !== "undefined" ? window.innerWidth : 375);
+  useEffect(() => {
     const handler = () => setWidth(window.innerWidth);
     window.addEventListener('resize', handler);
     return () => window.removeEventListener('resize', handler);
@@ -987,52 +987,23 @@ function AdvisorApp() {
 
   if (loading) return <div style={{ background:C.bg, minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"Georgia, serif" }}><div style={{ textAlign:"center" }}><div style={{ color:C.gold, fontSize:22, letterSpacing:"0.14em", marginBottom:12 }}>PROVENANCE</div><div style={{ color:C.dim, fontSize:12 }}>Loading collection…</div></div></div>;
 
-  const windowWidth = useWindowWidth();
-  const isDesktop = windowWidth >= DESKTOP;
-
   return (
-    <div style={{ background:C.bg, minHeight:"100vh", color:C.text, fontFamily:"'Georgia', serif", overflowX:"hidden", display:isDesktop?"flex":"block" }}>
+    <div style={{ background:C.bg, minHeight:"100vh", color:C.text, fontFamily:"'Georgia', serif", overflowX:"hidden" }}>
       {confirmDelete&&selected&&<ConfirmModal title={selected.title} onConfirm={deleteObject} onCancel={()=>setConfirmDelete(false)} />}
-
-      {/* Sidebar — desktop only */}
-      {isDesktop && (
-        <div style={{ width:220, minHeight:"100vh", background:C.card, borderRight:`1px solid ${C.border}`, display:"flex", flexDirection:"column", flexShrink:0, position:"sticky", top:0, height:"100vh", overflowY:"auto" }}>
-          <div style={{ padding:"24px 20px 20px" }}>
-            <div style={{ fontSize:16, letterSpacing:"0.16em", color:C.gold, marginBottom:3 }}>PROVENANCE</div>
-            <div style={{ fontSize:8, letterSpacing:"0.16em", color:C.dim, textTransform:"uppercase" }}>Collection · Value · Intelligence</div>
-          </div>
-          <div style={{ borderTop:`1px solid ${C.border}`, padding:"16px 12px", flex:1 }}>
-            {NAV.map(({ key, label, disabled }) => (
-              <button key={key}
-                style={{ display:"block", width:"100%", textAlign:"left", background:view===key?C.goldFaint:"transparent", color:view===key?C.gold:disabled?C.dim:C.muted, border:`1px solid ${view===key?C.gold+"44":"transparent"}`, padding:"10px 12px", cursor:disabled?"default":"pointer", fontSize:11, letterSpacing:"0.1em", textTransform:"uppercase", borderRadius:2, fontFamily:"Georgia, serif", marginBottom:4, opacity:disabled?0.4:1 }}
-                onClick={() => { if(disabled) return; setView(key); setSelectedClient(null); }}>
-                {label}
-              </button>
-            ))}
-          </div>
-          <div style={{ borderTop:`1px solid ${C.border}`, padding:"16px 20px" }}>
-            <button style={mkBtn("ghost", { fontSize:9, padding:"6px 12px", width:"100%" })} onClick={() => supabase.auth.signOut()}>Sign out</button>
-          </div>
+      <div style={{ borderBottom:`1px solid ${C.border}`, padding:"14px 16px", boxSizing:"border-box", width:"100%" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:11 }}>
+          <div><div style={{ fontSize:17, letterSpacing:"0.14em", color:C.gold }}>PROVENANCE</div><div style={{ fontSize:9, letterSpacing:"0.2em", color:C.dim, textTransform:"uppercase", marginTop:2 }}>Collection · Value · Intelligence</div></div>
+          <button style={mkBtn("ghost", { fontSize:9, padding:"5px 10px", marginTop:2 })} onClick={() => supabase.auth.signOut()}>Sign out</button>
         </div>
-      )}
-
-      {/* Mobile header */}
-      {!isDesktop && (
-        <div style={{ borderBottom:`1px solid ${C.border}`, padding:"14px 16px", boxSizing:"border-box", width:"100%" }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:11 }}>
-            <div><div style={{ fontSize:17, letterSpacing:"0.14em", color:C.gold }}>PROVENANCE</div><div style={{ fontSize:9, letterSpacing:"0.2em", color:C.dim, textTransform:"uppercase", marginTop:2 }}>Collection · Value · Intelligence</div></div>
-            <button style={mkBtn("ghost", { fontSize:9, padding:"5px 10px", marginTop:2 })} onClick={() => supabase.auth.signOut()}>Sign out</button>
-          </div>
-          <div style={{ display:"flex", gap:5, overflowX:"auto", paddingBottom:1, WebkitOverflowScrolling:"touch" }}>
-            {NAV.map(({ key, label, disabled })=>(
-              <button key={key} style={{ background:view===key?C.gold:"transparent", color:view===key?C.bg:disabled?C.dim:C.muted, border:`1px solid ${view===key?C.gold:C.border}`, padding:"6px 13px", cursor:disabled?"default":"pointer", fontSize:10, letterSpacing:"0.1em", textTransform:"uppercase", borderRadius:2, fontFamily:"Georgia, serif", whiteSpace:"nowrap", flexShrink:0, opacity:disabled?0.4:1 }}
-                onClick={()=>{ if(disabled) return; setView(key); setSelectedClient(null); }}>{label}</button>
-            ))}
-          </div>
+        <div style={{ display:"flex", gap:5, overflowX:"auto", paddingBottom:1, WebkitOverflowScrolling:"touch" }}>
+          {NAV.map(({ key, label, disabled })=>(
+            <button key={key} style={{ background:view===key?C.gold:"transparent", color:view===key?C.bg:disabled?C.dim:C.muted, border:`1px solid ${view===key?C.gold:C.border}`, padding:"6px 13px", cursor:disabled?"default":"pointer", fontSize:10, letterSpacing:"0.1em", textTransform:"uppercase", borderRadius:2, fontFamily:"Georgia, serif", whiteSpace:"nowrap", flexShrink:0, opacity:disabled?0.4:1 }}
+              onClick={()=>{ if(disabled) return; setView(key); setSelectedClient(null); }}>{label}</button>
+          ))}
         </div>
-      )}
+      </div>
 
-      <div style={{ padding:isDesktop?"28px 32px":"18px 16px", boxSizing:"border-box", width:"100%", maxWidth:isDesktop?"none":860, margin:"0 auto", flex:1, minWidth:0 }}>
+      <div style={{ padding:"18px 16px", boxSizing:"border-box", width:"100%", maxWidth:860, margin:"0 auto" }}>
 
         {view==="portfolio"&&(<>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
