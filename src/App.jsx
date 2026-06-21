@@ -491,6 +491,24 @@ function ComparablesPanel({ object }) {
   );
 }
 
+function StarRating({ label, value, onChange, readonly=false }) {
+  return (
+    <div style={{ marginBottom: readonly ? 0 : 12 }}>
+      {label && <label style={LBL}>{label}</label>}
+      <div style={{ display:"flex", gap:4 }}>
+        {[1,2,3,4,5].map(i => (
+          <span key={i}
+            onClick={() => !readonly && onChange(i === value ? null : i)}
+            style={{ fontSize:20, cursor:readonly?"default":"pointer", color: i <= (value||0) ? C.gold : C.border, lineHeight:1 }}>
+            ★
+          </span>
+        ))}
+        {!readonly && value && <span style={{ fontSize:10, color:C.dim, alignSelf:"center", marginLeft:4 }}>{value}/5</span>}
+      </div>
+    </div>
+  );
+}
+
 function ValuationLedger({ valuations, onDelete, onUpdate }) {
   const [editingId, setEditingId] = useState(null);
   const [editData, setEditData] = useState({});
@@ -792,7 +810,7 @@ function AdvisorApp() {
   };
 
   const saveEdit = async () => {
-    const body = { title:editObj.title, artist:editObj.artist, medium:editObj.medium, year:+editObj.year||null, category:editObj.category, client_id:editObj.client_id||null };
+    const body = { title:editObj.title, artist:editObj.artist, medium:editObj.medium, year:+editObj.year||null, category:editObj.category, client_id:editObj.client_id||null, enjoyment_index:editObj.enjoyment_index||null, condition_rating:editObj.condition_rating||null, rarity_index:editObj.rarity_index||null };
     await db.patch("objects", selectedId, body);
     setObjects((p)=>p.map((o)=>o.id===selectedId?{ ...o, ...editObj, year:+editObj.year }:o));
     setEditMode(false); setEditObj(null); notify("Object updated");
@@ -869,6 +887,9 @@ function AdvisorApp() {
                   <div><label style={LBL}>Medium</label><input style={mkInput()} value={editObj.medium} onChange={(e)=>setEditObj({...editObj,medium:e.target.value})} /></div>
                   <div><label style={LBL}>Category</label><select style={mkInput()} value={editObj.category} onChange={(e)=>setEditObj({...editObj,category:e.target.value})}>{["Painting","Sculpture","Works on Paper","Photography","Decorative Arts","Jewellery","Furniture","Other"].map((c)=><option key={c}>{c}</option>)}</select></div>
                   <div style={{ gridColumn:"1/-1" }}><label style={LBL}>Assign to Client</label><select style={mkInput()} value={editObj.client_id||""} onChange={e=>setEditObj({...editObj,client_id:e.target.value||null})}><option value="">— Unassigned —</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+                  <div><StarRating label="Enjoyment Index" value={editObj.enjoyment_index} onChange={v=>setEditObj({...editObj,enjoyment_index:v})} /></div>
+                  <div><StarRating label="Condition Rating" value={editObj.condition_rating} onChange={v=>setEditObj({...editObj,condition_rating:v})} /></div>
+                  <div><StarRating label="Rarity Index" value={editObj.rarity_index} onChange={v=>setEditObj({...editObj,rarity_index:v})} /></div>
                 </div>
                 <div style={{ display:"flex", gap:10 }}><button style={mkBtn("primary")} onClick={saveEdit}>Save</button><button style={mkBtn("ghost")} onClick={()=>{ setEditMode(false); setEditObj(null); }}>Cancel</button></div>
               </div>
@@ -892,6 +913,16 @@ function AdvisorApp() {
               <StatCard lbl="Acquired" val={fmt(objStats.first.value)} sub={fmtDate(objStats.first.date)} />
               <StatCard lbl="Valuations" val={selected.valuations.length} />
             </div>}
+            {(selected.enjoyment_index||selected.condition_rating||selected.rarity_index) && (
+              <div style={CARD}>
+                <div style={SEC}>Object Ratings</div>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10 }}>
+                  <div><div style={LBL}>Enjoyment</div><StarRating value={selected.enjoyment_index} readonly /></div>
+                  <div><div style={LBL}>Condition</div><StarRating value={selected.condition_rating} readonly /></div>
+                  <div><div style={LBL}>Rarity</div><StarRating value={selected.rarity_index} readonly /></div>
+                </div>
+              </div>
+            )}
             {objectChart.length>0&&<div style={CARD}><div style={SEC}>Value History</div><ResponsiveContainer width="100%" height={170}><LineChart data={objectChart} margin={{ top:4, right:4, left:0, bottom:0 }}><CartesianGrid strokeDasharray="3 3" stroke={C.active} /><XAxis dataKey="date" tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={{ stroke:C.border }} /><YAxis tickFormatter={fmtShort} tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={false} width={44} /><Tooltip content={<ChartTip />} /><Line type="monotone" dataKey="value" stroke={C.gold} strokeWidth={2} dot={{ fill:C.gold, r:4 }} activeDot={{ r:6 }} name={selected.artist} /></LineChart></ResponsiveContainer></div>}
             <ComparablesPanel key={selected.id} object={selected} />
             <div style={CARD}>
