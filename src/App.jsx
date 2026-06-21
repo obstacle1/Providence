@@ -83,8 +83,8 @@ async function fetchComparables(artist, medium, category) {
 }
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
-const C = { bg:"#0F0E0C", card:"#161410", border:"#252019", gold:"#C9A84C", goldFaint:"#C9A84C22", text:"#E4DCCF", muted:"#8A7A68", dim:"#5A5044", green:"#6FA87A", red:"#A8706F", inner:"#121009", active:"#1C1914" };
-const mkBtn = (v="primary",x={}) => ({ background:v==="primary"?C.gold:v==="danger"?"#3D1515":"transparent", color:v==="primary"?C.bg:v==="danger"?"#C97070":C.gold, border:`1px solid ${v==="primary"?C.gold:v==="danger"?"#6B2525":C.border}`, padding:"7px 14px", cursor:"pointer", fontSize:10, letterSpacing:"0.1em", textTransform:"uppercase", borderRadius:2, fontFamily:"Georgia, serif", whiteSpace:"nowrap", ...x });
+const C = { bg:"#FFF1E5", card:"#FFFFFF", border:"#CCC1B7", gold:"#990F3D", goldFaint:"#990F3D22", text:"#33302E", muted:"#66605C", dim:"#999189", green:"#0A7340", red:"#CC0000", inner:"#FAF3EC", active:"#F2E3D5" };
+const mkBtn = (v="primary",x={}) => ({ background:v==="primary"?C.gold:v==="danger"?"#FFF1E5":"transparent", color:v==="primary"?"#FFFFFF":v==="danger"?"#CC0000":C.gold, border:`1px solid ${v==="primary"?C.gold:v==="danger"?"#CC0000":C.border}`, padding:"7px 14px", cursor:"pointer", fontSize:10, letterSpacing:"0.08em", textTransform:"uppercase", borderRadius:2, fontFamily:"Georgia, serif", whiteSpace:"nowrap", ...x });
 const mkInput = (x={}) => ({ background:C.inner, border:`1px solid ${C.border}`, color:C.text, padding:"8px 10px", borderRadius:2, fontSize:13, width:"100%", fontFamily:"Georgia, serif", outline:"none", boxSizing:"border-box", ...x });
 const LBL  = { fontSize:9, letterSpacing:"0.18em", textTransform:"uppercase", color:C.dim, marginBottom:4, display:"block" };
 const CARD = { background:C.card, border:`1px solid ${C.border}`, borderRadius:3, padding:"16px", marginBottom:14 };
@@ -202,7 +202,7 @@ function PublicClientView() {
                   <XAxis dataKey="date" tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={{ stroke:C.border }} />
                   <YAxis tickFormatter={fmtShort} tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={false} width={44} />
                   <Tooltip content={<ChartTip />} />
-                  <Line type="monotone" dataKey="total" stroke={C.gold} strokeWidth={2} dot={{ fill:C.gold, r:3 }} activeDot={{ r:5 }} name="Total Value" />
+                  <Line type="monotone" dataKey="total" stroke="#0D7680" strokeWidth={2} dot={{ fill:"#0D7680", r:3 }} activeDot={{ r:5 }} name="Total Value" />
                 </LineChart>
               </ResponsiveContainer>
             </div>
