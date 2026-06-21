@@ -42,6 +42,24 @@ const db = {
   },
 };
 
+// ── Image upload ─────────────────────────────────────────────────────────────
+async function uploadImage(file, objectId) {
+  const ext = file.name.split('.').pop();
+  const path = `${objectId}-${Date.now()}.${ext}`;
+  const res = await fetch(`${SUPA_URL}/storage/v1/object/object-images/${path}`, {
+    method: "POST",
+    headers: {
+      "apikey": SUPA_KEY,
+      "Authorization": `Bearer ${SUPA_KEY}`,
+      "Content-Type": file.type,
+      "x-upsert": "true",
+    },
+    body: file,
+  });
+  if (!res.ok) throw new Error("Upload failed");
+  return `${SUPA_URL}/storage/v1/object/public/object-images/${path}`;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const fmt = (n) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n);
@@ -386,6 +404,7 @@ function PublicClientView() {
                 <div key={obj.id}
                   style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px", cursor:"pointer", borderRadius:2, marginBottom:4, background:C.card, border:`1px solid ${C.border}`, boxSizing:"border-box" }}
                   onClick={() => setSelectedObj(obj)}>
+                  {obj.image_url && <img src={obj.image_url} alt={obj.title} style={{ width:48, height:48, objectFit:"cover", borderRadius:2, marginRight:10, flexShrink:0 }} />}
                   <div style={{ flex:1, minWidth:0, paddingRight:10 }}>
                     <div style={{ fontSize:14, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{obj.title}</div>
                     <div style={{ fontSize:11, color:C.dim, marginTop:2 }}>{obj.artist}{obj.year ? ` · ${obj.year}` : ""}</div>
@@ -407,6 +426,7 @@ function PublicClientView() {
           // Object detail
           <div>
             <button style={mkBtn("ghost",{ fontSize:10, padding:"5px 12px", marginBottom:14 })} onClick={()=>setSelectedObj(null)}>← Collection</button>
+            {selectedObj.image_url && <div style={{ marginBottom:14, borderRadius:3, overflow:"hidden", border:`1px solid ${C.border}` }}><img src={selectedObj.image_url} alt={selectedObj.title} style={{ width:"100%", maxHeight:280, objectFit:"cover", display:"block" }} /></div>}
             <div style={{ marginBottom:14 }}>
               <div style={{ fontSize:22, lineHeight:1.2, marginBottom:4 }}>{selectedObj.title}</div>
               <div style={{ fontSize:12, color:C.muted }}>{selectedObj.artist}{selectedObj.year?` · ${selectedObj.year}`:""}{selectedObj.medium?` · ${selectedObj.medium}`:""}</div>
@@ -896,7 +916,7 @@ function AdvisorApp() {
   };
 
   const saveEdit = async () => {
-    const body = { title:editObj.title, artist:editObj.artist, medium:editObj.medium, year:+editObj.year||null, category:editObj.category, client_id:editObj.client_id||null, enjoyment_index:editObj.enjoyment_index||null, condition_rating:editObj.condition_rating||null, rarity_index:editObj.rarity_index||null };
+    const body = { title:editObj.title, artist:editObj.artist, medium:editObj.medium, year:+editObj.year||null, category:editObj.category, client_id:editObj.client_id||null, enjoyment_index:editObj.enjoyment_index||null, condition_rating:editObj.condition_rating||null, rarity_index:editObj.rarity_index||null, image_url:editObj.image_url||null };
     await db.patch("objects", selectedId, body);
     setObjects((p)=>p.map((o)=>o.id===selectedId?{ ...o, ...editObj, year:+editObj.year }:o));
     setEditMode(false); setEditObj(null); notify("Object updated");
@@ -973,6 +993,12 @@ function AdvisorApp() {
                   <div><label style={LBL}>Medium</label><input style={mkInput()} value={editObj.medium} onChange={(e)=>setEditObj({...editObj,medium:e.target.value})} /></div>
                   <div><label style={LBL}>Category</label><select style={mkInput()} value={editObj.category} onChange={(e)=>setEditObj({...editObj,category:e.target.value})}>{["Painting","Sculpture","Works on Paper","Photography","Decorative Arts","Jewellery","Furniture","Other"].map((c)=><option key={c}>{c}</option>)}</select></div>
                   <div style={{ gridColumn:"1/-1" }}><label style={LBL}>Assign to Client</label><select style={mkInput()} value={editObj.client_id||""} onChange={e=>setEditObj({...editObj,client_id:e.target.value||null})}><option value="">— Unassigned —</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+                  <div style={{ gridColumn:"1/-1" }}>
+                    <label style={LBL}>Photo</label>
+                    {editObj.image_url && <img src={editObj.image_url} alt="" style={{ width:"100%", maxHeight:180, objectFit:"cover", borderRadius:2, marginBottom:8, display:"block" }} />}
+                    <input type="file" accept="image/*" capture="environment" style={{ display:"none" }} id="img-upload" onChange={async(e)=>{ const file=e.target.files[0]; if(!file) return; try { const url=await uploadImage(file,selectedId); setEditObj({...editObj,image_url:url}); } catch(err) { alert("Upload failed: "+err.message); } }} />
+                    <label htmlFor="img-upload" style={{ ...mkBtn("secondary",{ fontSize:10, padding:"7px 14px", display:"inline-block", cursor:"pointer" }) }}>{editObj.image_url?"📷 Change Photo":"📷 Add Photo"}</label>
+                  </div>
                   <div><StarRating label="Enjoyment Index" value={editObj.enjoyment_index} onChange={v=>setEditObj({...editObj,enjoyment_index:v})} /></div>
                   <div><StarRating label="Condition Rating" value={editObj.condition_rating} onChange={v=>setEditObj({...editObj,condition_rating:v})} /></div>
                   <div><StarRating label="Rarity Index" value={editObj.rarity_index} onChange={v=>setEditObj({...editObj,rarity_index:v})} /></div>
@@ -993,6 +1019,11 @@ function AdvisorApp() {
                 <button style={mkBtn("danger",{ fontSize:10, padding:"5px 12px" })} onClick={()=>setConfirmDelete(true)}>Delete</button>
               </div>
             </div>
+            {selected.image_url && (
+              <div style={{ marginBottom:16, borderRadius:3, overflow:"hidden", border:`1px solid ${C.border}` }}>
+                <img src={selected.image_url} alt={selected.title} style={{ width:"100%", maxHeight:260, objectFit:"cover", display:"block" }} />
+              </div>
+            )}
             {objStats&&<div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
               <StatCard lbl="Current Value" val={fmt(objStats.last.value)} sub={fmtDate(objStats.last.date)} />
               <StatCard lbl="Total Change" val={fmt(objStats.change)} sub={`${objStats.change>=0?"▲":"▼"} ${Math.abs(objStats.changePct)}%`} subColor={objStats.change>=0?C.green:C.red} />
