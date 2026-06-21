@@ -250,11 +250,23 @@ async function generatePDF(client, objects, advisorEmail) {
 
     if (obj.image_url) {
       try {
-        const imgRes = await fetch(obj.image_url);
-        const imgBlob = await imgRes.blob();
-        const imgData = await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(imgBlob); });
-        doc.addImage(imgData, 'JPEG', M, y - 4, thumbSize, thumbSize);
-      } catch(e) { /* skip if image fails */ }
+        await new Promise((resolve) => {
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          img.onload = () => {
+            try {
+              const canvas = document.createElement('canvas');
+              canvas.width = img.width; canvas.height = img.height;
+              canvas.getContext('2d').drawImage(img, 0, 0);
+              const dataUrl = canvas.toDataURL('image/jpeg');
+              doc.addImage(dataUrl, 'JPEG', M, y - 4, thumbSize, thumbSize);
+            } catch(e) {}
+            resolve();
+          };
+          img.onerror = () => resolve();
+          img.src = obj.image_url;
+        });
+      } catch(e) { /* skip */ }
     }
 
     doc.setFontSize(9);
