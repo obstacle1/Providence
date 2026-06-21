@@ -27,6 +27,7 @@ const LOGO_CV = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAA+gAAAPoCAYAAABNo
 const ALLOWED_EMAILS = [
   "thomasgrayling@gmail.com",
   "marciejgreene@gmail.com",
+  "jason@canonvaults.com",
 ];
 
 const db = {
