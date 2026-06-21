@@ -876,10 +876,17 @@ function AdvisorApp() {
     (async () => {
       try {
         const advisorId = session.user.id;
+        const userEmail = session.user.email?.toLowerCase();
+
+        // Check if user is a team member — if so, load owner's data instead
+        const teams = await db.get("teams", `?member_emails=cs.{"${userEmail}"}`);
+        const ownerTeam = teams?.[0];
+        const loadAsId = ownerTeam ? ownerTeam.owner_id : advisorId;
+
         const [objs, vals, cls] = await Promise.all([
-          db.get("objects", `?advisor_id=eq.${advisorId}&order=created_at.asc`),
+          db.get("objects", `?advisor_id=eq.${loadAsId}&order=created_at.asc`),
           db.get("valuations", "?order=date.asc"),
-          db.get("clients", `?advisor_id=eq.${advisorId}&order=created_at.asc`),
+          db.get("clients", `?advisor_id=eq.${loadAsId}&order=created_at.asc`),
         ]);
         const merged = (objs||[]).map((o) => ({ ...o, valuations: (vals||[]).filter((v)=>v.object_id===o.id).map((v)=>({ date:v.date, value:+v.value, note:v.note||"", _id:v.id })) }));
         setObjects(merged); setClients(cls||[]);
@@ -1165,4 +1172,3 @@ export default function App() {
     </BrowserRouter>
   );
 }
-
