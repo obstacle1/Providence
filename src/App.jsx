@@ -1013,12 +1013,16 @@ function AdvisorApp() {
             <div style={{ marginBottom:16 }}>
               <div style={{ fontSize:16, color:C.text, marginBottom:14 }}>Edit Object</div>
               <div style={CARD}>
-                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:11, marginBottom:13, boxSizing:"border-box", width:"100%" }}>
-                  <div style={{ gridColumn:"1/-1" }}><label style={LBL}>Title</label><input style={mkInput()} value={editObj.title} onChange={(e)=>setEditObj({...editObj,title:e.target.value})} /></div>
-                  <div style={{ minWidth:0 }}><label style={LBL}>Artist</label><input style={mkInput()} value={editObj.artist} onChange={(e)=>setEditObj({...editObj,artist:e.target.value})} /></div>
-                  <div style={{ minWidth:0 }}><label style={LBL}>Year</label><input style={mkInput()} type="number" value={editObj.year} onChange={(e)=>setEditObj({...editObj,year:e.target.value})} /></div>
-                  <div style={{ minWidth:0 }}><label style={LBL}>Medium</label><input style={mkInput()} value={editObj.medium} onChange={(e)=>setEditObj({...editObj,medium:e.target.value})} /></div>
-                  <div style={{ minWidth:0 }}><label style={LBL}>Category</label><select style={mkInput()} value={editObj.category} onChange={(e)=>setEditObj({...editObj,category:e.target.value})}>{["Painting","Sculpture","Works on Paper","Photography","Decorative Arts","Jewellery","Furniture","Other"].map((c)=><option key={c}>{c}</option>)}</select></div>
+                <div style={{ display:"flex", flexDirection:"column", gap:11, marginBottom:13 }}>
+                  <div><label style={LBL}>Title</label><input style={mkInput()} value={editObj.title} onChange={(e)=>setEditObj({...editObj,title:e.target.value})} /></div>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:11 }}>
+                    <div><label style={LBL}>Artist</label><input style={mkInput()} value={editObj.artist} onChange={(e)=>setEditObj({...editObj,artist:e.target.value})} /></div>
+                    <div><label style={LBL}>Year</label><input style={mkInput()} type="number" value={editObj.year} onChange={(e)=>setEditObj({...editObj,year:e.target.value})} /></div>
+                  </div>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:11 }}>
+                    <div><label style={LBL}>Medium</label><input style={mkInput()} value={editObj.medium} onChange={(e)=>setEditObj({...editObj,medium:e.target.value})} /></div>
+                    <div><label style={LBL}>Category</label><select style={mkInput()} value={editObj.category} onChange={(e)=>setEditObj({...editObj,category:e.target.value})}>{["Painting","Sculpture","Works on Paper","Photography","Decorative Arts","Jewellery","Furniture","Other"].map((c)=><option key={c}>{c}</option>)}</select></div>
+                  </div>
                   <div style={{ gridColumn:"1/-1" }}><label style={LBL}>Assign to Client</label><select style={mkInput()} value={editObj.client_id||""} onChange={e=>setEditObj({...editObj,client_id:e.target.value||null})}><option value="">— Unassigned —</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
                   <div style={{ gridColumn:"1/-1" }}>
                     <label style={LBL}>Photo</label>
