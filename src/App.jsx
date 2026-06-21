@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { BrowserRouter, Routes, Route, useParams } from "react-router-dom";
 
 // ── Supabase config ───────────────────────────────────────────────────────────
 const SUPA_URL = "https://dgtpmshfnttcsqjaxvmy.supabase.co";
@@ -63,7 +64,6 @@ async function fetchComparables(artist, medium, category) {
     });
     if (res.ok) { const d = await res.json(); if (d?.comparables) return d; }
   } catch (_) {}
-
   const callClaude = async (messages, useSearch = false) => {
     const body = { model: "claude-sonnet-4-6", max_tokens: 2000, messages };
     if (useSearch) body.tools = [{ type: "web_search_20250305", name: "web_search" }];
@@ -73,7 +73,6 @@ async function fetchComparables(artist, medium, category) {
   };
   const extractText = (d) => (d.content||[]).filter((b)=>b.type==="text").map((b)=>b.text).join("\n").trim();
   const tryParse = (s) => { const c=s.replace(/```json\s*/gi,"").replace(/```\s*/g,"").trim(); try{return JSON.parse(c);}catch(_){} const a=c.indexOf("{"),b=c.lastIndexOf("}"); if(a!==-1&&b>a){try{return JSON.parse(c.slice(a,b+1));}catch(_){}} return null; };
-
   const sd = await callClaude([{ role:"user", content:`Search for recent auction results (2020–2025) for works by ${artist}${medium?`, particularly ${medium}`:""}. Find 5–7 real hammer prices from Christie's, Sotheby's, Phillips, or Bonhams. List each result with: work title, year made, medium, sale price in USD, auction house, and sale date (YYYY-MM). Note market trend (rising/stable/declining) and value drivers.` }], true);
   const st = extractText(sd);
   if (!st) throw new Error("No search results");
@@ -103,6 +102,186 @@ const StatCard = ({ lbl, val, sub, subColor }) => (
     {sub && <div style={{ fontSize:11, color:subColor||C.muted, marginTop:3 }}>{sub}</div>}
   </div>
 );
+
+function calcPortStats(objects) {
+  const totals = objects.map((o) => { const s=[...o.valuations].sort((a,b)=>a.date.localeCompare(b.date)); return { first:s[0]?.value||0, last:s[s.length-1]?.value||0 }; });
+  const cur=totals.reduce((acc,t)=>acc+t.last,0), acq=totals.reduce((acc,t)=>acc+t.first,0), gain=cur-acq;
+  return { cur, acq, gain, gainPct:acq?((gain/acq)*100).toFixed(1):"0.0" };
+}
+
+// ── Public Client View (no auth required) ─────────────────────────────────────
+function PublicClientView() {
+  const { slug } = useParams();
+  const [client, setClient] = useState(null);
+  const [objects, setObjects] = useState([]);
+  const [selectedObj, setSelectedObj] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const cls = await db.get("clients", `?slug=eq.${slug}&limit=1`);
+        if (!cls?.length) { setNotFound(true); setLoading(false); return; }
+        const c = cls[0];
+        setClient(c);
+        const [objs, vals] = await Promise.all([
+          db.get("objects", `?client_id=eq.${c.id}&order=created_at.asc`),
+          db.get("valuations", "?order=date.asc"),
+        ]);
+        const merged = (objs||[]).map(o => ({
+          ...o,
+          valuations: (vals||[]).filter(v=>v.object_id===o.id).map(v=>({ date:v.date, value:+v.value, note:v.note||"", _id:v.id })),
+        }));
+        setObjects(merged);
+      } catch(e) { console.error(e); }
+      setLoading(false);
+    })();
+  }, [slug]);
+
+  const stats = useMemo(() => calcPortStats(objects), [objects]);
+
+  const portfolioChart = useMemo(() => {
+    const dates = [...new Set(objects.flatMap(o=>o.valuations.map(v=>v.date)))].sort();
+    return dates.map(date => {
+      let total=0;
+      objects.forEach(obj => { const s=[...obj.valuations].sort((a,b)=>a.date.localeCompare(b.date)); const before=s.filter(v=>v.date<=date); if(before.length) total+=before[before.length-1].value; });
+      return { date:fmtAxis(date), total };
+    });
+  }, [objects]);
+
+  const objChart = useMemo(() => {
+    if (!selectedObj) return [];
+    return [...selectedObj.valuations].sort((a,b)=>a.date.localeCompare(b.date)).map(v=>({ date:fmtAxis(v.date), value:v.value }));
+  }, [selectedObj]);
+
+  if (loading) return (
+    <div style={{ background:C.bg, minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"Georgia, serif" }}>
+      <div style={{ color:C.dim, fontSize:12 }}>Loading collection…</div>
+    </div>
+  );
+
+  if (notFound) return (
+    <div style={{ background:C.bg, minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"Georgia, serif" }}>
+      <div style={{ textAlign:"center" }}>
+        <div style={{ color:C.gold, fontSize:20, letterSpacing:"0.14em", marginBottom:8 }}>PROVENANCE</div>
+        <div style={{ color:C.dim, fontSize:13 }}>Collection not found.</div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ background:C.bg, minHeight:"100vh", color:C.text, fontFamily:"Georgia, serif", overflowX:"hidden" }}>
+      {/* Header */}
+      <div style={{ borderBottom:`1px solid ${C.border}`, padding:"14px 16px" }}>
+        <div style={{ fontSize:14, letterSpacing:"0.16em", color:C.gold, marginBottom:2 }}>PROVENANCE</div>
+        <div style={{ fontSize:9, letterSpacing:"0.2em", color:C.dim, textTransform:"uppercase" }}>Collection Value Intelligence</div>
+      </div>
+
+      <div style={{ padding:"18px 16px", maxWidth:860, margin:"0 auto" }}>
+        {!selectedObj ? (<>
+          {/* Client header */}
+          <div style={{ marginBottom:20 }}>
+            <div style={{ fontSize:24, marginBottom:4 }}>{client.name}</div>
+            <div style={{ fontSize:11, color:C.dim, letterSpacing:"0.08em" }}>Private Collection · {new Date().getFullYear()}</div>
+          </div>
+
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
+            <StatCard lbl="Total Value" val={fmt(stats.cur)} />
+            <StatCard lbl="Total Gain" val={fmt(stats.gain)} sub={`${stats.gain>=0?"▲":"▼"} ${Math.abs(stats.gainPct)}%`} subColor={stats.gain>=0?C.green:C.red} />
+            <StatCard lbl="Objects" val={objects.length} />
+            <StatCard lbl="Acquisition Cost" val={fmt(stats.acq)} />
+          </div>
+
+          {portfolioChart.length > 0 && (
+            <div style={CARD}>
+              <div style={SEC}>Portfolio Value Over Time</div>
+              <ResponsiveContainer width="100%" height={190}>
+                <LineChart data={portfolioChart} margin={{ top:4, right:4, left:0, bottom:0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={C.active} />
+                  <XAxis dataKey="date" tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={{ stroke:C.border }} />
+                  <YAxis tickFormatter={fmtShort} tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={false} width={44} />
+                  <Tooltip content={<ChartTip />} />
+                  <Line type="monotone" dataKey="total" stroke={C.gold} strokeWidth={2} dot={{ fill:C.gold, r:3 }} activeDot={{ r:5 }} name="Total Value" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {objects.length > 0 && <>
+            <div style={SEC}>Collection</div>
+            {objects.map(obj => {
+              const s=[...obj.valuations].sort((a,b)=>a.date.localeCompare(b.date)), cur=s[s.length-1]?.value||0, fst=s[0]?.value||0, g=fst?pct(fst,cur):null;
+              return (
+                <div key={obj.id}
+                  style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px", cursor:"pointer", borderRadius:2, marginBottom:4, background:C.card, border:`1px solid ${C.border}`, boxSizing:"border-box" }}
+                  onClick={() => setSelectedObj(obj)}>
+                  <div style={{ flex:1, minWidth:0, paddingRight:10 }}>
+                    <div style={{ fontSize:14, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{obj.title}</div>
+                    <div style={{ fontSize:11, color:C.dim, marginTop:2 }}>{obj.artist}{obj.year ? ` · ${obj.year}` : ""}</div>
+                  </div>
+                  <div style={{ textAlign:"right", flexShrink:0 }}>
+                    <div style={{ fontSize:14, color:C.gold }}>{fmt(cur)}</div>
+                    {g!==null&&<div style={{ fontSize:11, color:cur>=fst?C.green:C.red, marginTop:1 }}>{cur>=fst?"▲":"▼"} {Math.abs(g)}%</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </>}
+
+          <div style={{ marginTop:24, paddingTop:16, borderTop:`1px solid ${C.border}`, fontSize:10, color:C.dim, textAlign:"center", lineHeight:1.6 }}>
+            Prepared by Provenance · Collection Value Intelligence<br/>
+            Values shown are estimates for reference only.
+          </div>
+        </>) : (
+          // Object detail
+          <div>
+            <button style={mkBtn("ghost",{ fontSize:10, padding:"5px 12px", marginBottom:14 })} onClick={()=>setSelectedObj(null)}>← Collection</button>
+            <div style={{ marginBottom:14 }}>
+              <div style={{ fontSize:22, lineHeight:1.2, marginBottom:4 }}>{selectedObj.title}</div>
+              <div style={{ fontSize:12, color:C.muted }}>{selectedObj.artist}{selectedObj.year?` · ${selectedObj.year}`:""}{selectedObj.medium?` · ${selectedObj.medium}`:""}</div>
+            </div>
+            {(() => {
+              const s=[...selectedObj.valuations].sort((a,b)=>a.date.localeCompare(b.date));
+              if (!s.length) return null;
+              const first=s[0], last=s[s.length-1], change=last.value-first.value, changePct=pct(first.value,last.value);
+              return (<>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
+                  <StatCard lbl="Current Value" val={fmt(last.value)} sub={fmtDate(last.date)} />
+                  <StatCard lbl="Total Change" val={fmt(change)} sub={`${change>=0?"▲":"▼"} ${Math.abs(changePct)}%`} subColor={change>=0?C.green:C.red} />
+                  <StatCard lbl="Acquired" val={fmt(first.value)} sub={fmtDate(first.date)} />
+                  <StatCard lbl="Valuations" val={s.length} />
+                </div>
+                {objChart.length>0&&<div style={CARD}>
+                  <div style={SEC}>Value History</div>
+                  <ResponsiveContainer width="100%" height={170}>
+                    <LineChart data={objChart} margin={{ top:4, right:4, left:0, bottom:0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={C.active} />
+                      <XAxis dataKey="date" tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={{ stroke:C.border }} />
+                      <YAxis tickFormatter={fmtShort} tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={false} width={44} />
+                      <Tooltip content={<ChartTip />} />
+                      <Line type="monotone" dataKey="value" stroke={C.gold} strokeWidth={2} dot={{ fill:C.gold, r:4 }} activeDot={{ r:6 }} name={selectedObj.artist} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>}
+                <div style={CARD}>
+                  <div style={SEC}>Valuation History</div>
+                  {[...s].reverse().map((v,i,arr)=>{
+                    const prev=arr[i+1], chg=prev?v.value-prev.value:null, chgP=prev?pct(prev.value,v.value):null;
+                    return (<div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10, padding:"10px 0", borderBottom:`1px solid ${C.border}` }}>
+                      <div><div style={{ fontSize:14, color:C.gold, marginBottom:2 }}>{fmt(v.value)}</div><div style={{ fontSize:11, color:C.dim }}>{fmtDate(v.date)}</div>{v.note&&<div style={{ fontSize:11, color:C.muted, marginTop:1 }}>{v.note}</div>}</div>
+                      <div style={{ textAlign:"right" }}>{chg!==null?(<><div style={{ fontSize:13, color:chg>=0?C.green:C.red }}>{chg>=0?"▲":"▼"} {fmt(Math.abs(chg))}</div><div style={{ fontSize:11, color:chg>=0?C.green:C.red, marginTop:1 }}>{Math.abs(chgP)}%</div></>):(<div style={{ fontSize:11, color:C.dim }}>Acquisition</div>)}</div>
+                    </div>);
+                  })}
+                </div>
+              </>);
+            })()}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function ComparablesPanel({ object }) {
   const [status, setStatus] = useState("idle");
@@ -163,15 +342,11 @@ function ConfirmModal({ title, onConfirm, onCancel }) {
   );
 }
 
-// ── Login Screen ──────────────────────────────────────────────────────────────
 function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const handleLogin = async () => {
     setLoading(true);
-    await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: { redirectTo: window.location.origin },
-    });
+    await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: window.location.origin } });
   };
   return (
     <div style={{ background:C.bg, minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"Georgia, serif", padding:20 }}>
@@ -186,19 +361,10 @@ function LoginScreen() {
   );
 }
 
-// ── Portfolio stats helper ────────────────────────────────────────────────────
-function calcPortStats(objects) {
-  const totals = objects.map((o) => { const s=[...o.valuations].sort((a,b)=>a.date.localeCompare(b.date)); return { first:s[0]?.value||0, last:s[s.length-1]?.value||0 }; });
-  const cur=totals.reduce((acc,t)=>acc+t.last,0), acq=totals.reduce((acc,t)=>acc+t.first,0), gain=cur-acq;
-  return { cur, acq, gain, gainPct:acq?((gain/acq)*100).toFixed(1):"0.0" };
-}
-
-// ── Clients view ──────────────────────────────────────────────────────────────
 function ClientsView({ clients, objects, onSelectClient, session, onClientAdded }) {
   const [showAdd, setShowAdd] = useState(false);
   const [newClient, setNewClient] = useState({ name:"", email:"" });
   const [saving, setSaving] = useState(false);
-
   const addClient = async () => {
     if (!newClient.name) return;
     setSaving(true);
@@ -207,14 +373,12 @@ function ClientsView({ clients, objects, onSelectClient, session, onClientAdded 
     if (rows[0]) { onClientAdded(rows[0]); setNewClient({ name:"", email:"" }); setShowAdd(false); }
     setSaving(false);
   };
-
   return (
     <div>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
         <div style={{ fontSize:17 }}>Clients</div>
         <button style={mkBtn("secondary", { fontSize:10, padding:"5px 12px" })} onClick={()=>setShowAdd(v=>!v)}>{showAdd?"Cancel":"+ New Client"}</button>
       </div>
-
       {showAdd && (
         <div style={CARD}>
           <div style={{ display:"grid", gap:11, marginBottom:13 }}>
@@ -224,18 +388,12 @@ function ClientsView({ clients, objects, onSelectClient, session, onClientAdded 
           <button style={mkBtn("primary", { opacity:saving?0.6:1 })} onClick={addClient} disabled={saving}>{saving?"Saving…":"Add Client"}</button>
         </div>
       )}
-
-      {clients.length === 0 && !showAdd && (
-        <div style={{ textAlign:"center", padding:"40px 0", color:C.dim, fontSize:13 }}>No clients yet. Add your first client above.</div>
-      )}
-
+      {clients.length === 0 && !showAdd && <div style={{ textAlign:"center", padding:"40px 0", color:C.dim, fontSize:13 }}>No clients yet. Add your first client above.</div>}
       {clients.map(client => {
         const clientObjs = objects.filter(o => o.client_id === client.id);
         const stats = calcPortStats(clientObjs);
         return (
-          <div key={client.id}
-            style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px", cursor:"pointer", borderRadius:2, marginBottom:6, background:C.card, border:`1px solid ${C.border}`, boxSizing:"border-box" }}
-            onClick={() => onSelectClient(client)}>
+          <div key={client.id} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px", cursor:"pointer", borderRadius:2, marginBottom:6, background:C.card, border:`1px solid ${C.border}`, boxSizing:"border-box" }} onClick={() => onSelectClient(client)}>
             <div style={{ flex:1, minWidth:0, paddingRight:10 }}>
               <div style={{ fontSize:15 }}>{client.name}</div>
               <div style={{ fontSize:11, color:C.dim, marginTop:2 }}>{clientObjs.length} object{clientObjs.length!==1?"s":""}{client.email ? ` · ${client.email}` : ""}</div>
@@ -251,19 +409,16 @@ function ClientsView({ clients, objects, onSelectClient, session, onClientAdded 
   );
 }
 
-// ── Client portfolio view ─────────────────────────────────────────────────────
-function ClientPortfolioView({ client, objects, onBack, onSelectObject, session }) {
+function ClientPortfolioView({ client, objects, onBack, onSelectObject }) {
   const clientObjs = objects.filter(o => o.client_id === client.id);
   const stats = calcPortStats(clientObjs);
   const shareUrl = `${window.location.origin}/client/${client.slug}`;
-
   const portfolioChart = useMemo(() => {
     const dates = [...new Set(clientObjs.flatMap(o=>o.valuations.map(v=>v.date)))].sort();
     return dates.map(date => { let total=0; clientObjs.forEach(obj=>{ const s=[...obj.valuations].sort((a,b)=>a.date.localeCompare(b.date)); const before=s.filter(v=>v.date<=date); if(before.length) total+=before[before.length-1].value; }); return { date:fmtAxis(date), total }; });
   }, [clientObjs]);
-
-  const copyLink = () => { navigator.clipboard.writeText(shareUrl); };
-
+  const [copied, setCopied] = useState(false);
+  const copyLink = () => { navigator.clipboard.writeText(shareUrl); setCopied(true); setTimeout(()=>setCopied(false), 2000); };
   return (
     <div>
       <div style={{ marginBottom:16 }}>
@@ -272,35 +427,28 @@ function ClientPortfolioView({ client, objects, onBack, onSelectObject, session 
         {client.email && <div style={{ fontSize:12, color:C.muted, marginBottom:8 }}>{client.email}</div>}
         <div style={{ display:"flex", alignItems:"center", gap:8, background:C.inner, border:`1px solid ${C.border}`, borderRadius:2, padding:"8px 10px" }}>
           <div style={{ fontSize:11, color:C.dim, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{shareUrl}</div>
-          <button style={mkBtn("secondary",{ fontSize:9, padding:"4px 10px" })} onClick={copyLink}>Copy Link</button>
+          <button style={mkBtn("secondary",{ fontSize:9, padding:"4px 10px" })} onClick={copyLink}>{copied?"Copied!":"Copy Link"}</button>
         </div>
       </div>
-
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
         <StatCard lbl="Total Value" val={fmt(stats.cur)} />
         <StatCard lbl="Total Gain" val={fmt(stats.gain)} sub={`${stats.gain>=0?"▲":"▼"} ${Math.abs(stats.gainPct)}%`} subColor={stats.gain>=0?C.green:C.red} />
         <StatCard lbl="Objects" val={clientObjs.length} />
         <StatCard lbl="Acquisition Cost" val={fmt(stats.acq)} />
       </div>
-
       {portfolioChart.length > 0 && (
         <div style={CARD}>
           <div style={SEC}>Portfolio Value Over Time</div>
           <ResponsiveContainer width="100%" height={190}><LineChart data={portfolioChart} margin={{ top:4, right:4, left:0, bottom:0 }}><CartesianGrid strokeDasharray="3 3" stroke={C.active} /><XAxis dataKey="date" tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={{ stroke:C.border }} /><YAxis tickFormatter={fmtShort} tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={false} width={44} /><Tooltip content={<ChartTip />} /><Line type="monotone" dataKey="total" stroke={C.gold} strokeWidth={2} dot={{ fill:C.gold, r:3 }} activeDot={{ r:5 }} name="Total Value" /></LineChart></ResponsiveContainer>
         </div>
       )}
-
-      {clientObjs.length === 0 && (
-        <div style={{ textAlign:"center", padding:"30px 0", color:C.dim, fontSize:13 }}>No objects yet. Add objects and assign them to {client.name}.</div>
-      )}
-
+      {clientObjs.length === 0 && <div style={{ textAlign:"center", padding:"30px 0", color:C.dim, fontSize:13 }}>No objects yet. Add objects and assign them to {client.name}.</div>}
       {clientObjs.length > 0 && <>
         <div style={SEC}>Collection</div>
         {clientObjs.map(obj => {
           const s=[...obj.valuations].sort((a,b)=>a.date.localeCompare(b.date)), cur=s[s.length-1]?.value||0, fst=s[0]?.value||0, g=fst?pct(fst,cur):null;
           return (
-            <div key={obj.id} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px", cursor:"pointer", borderRadius:2, marginBottom:4, background:C.card, border:`1px solid ${C.border}`, boxSizing:"border-box" }}
-              onClick={() => onSelectObject(obj)}>
+            <div key={obj.id} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px", cursor:"pointer", borderRadius:2, marginBottom:4, background:C.card, border:`1px solid ${C.border}`, boxSizing:"border-box" }} onClick={() => onSelectObject(obj)}>
               <div style={{ flex:1, minWidth:0, paddingRight:10 }}>
                 <div style={{ fontSize:14, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{obj.title}</div>
                 <div style={{ fontSize:11, color:C.dim, marginTop:2 }}>{obj.artist} · {obj.year}</div>
@@ -317,7 +465,8 @@ function ClientPortfolioView({ client, objects, onBack, onSelectObject, session 
   );
 }
 
-export default function App() {
+// ── Main advisor app ──────────────────────────────────────────────────────────
+function AdvisorApp() {
   const [session,       setSession]       = useState(null);
   const [authLoading,   setAuthLoading]   = useState(true);
   const [objects,       setObjects]       = useState([]);
@@ -341,19 +490,12 @@ export default function App() {
   const notify = (msg) => { setToast(msg); setTimeout(()=>setToast(null), 2800); };
   const selected = objects.find((o)=>o.id===selectedId);
 
-  // ── Auth state ────────────────────────────────────────────────────────────
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setAuthLoading(false);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
+    supabase.auth.getSession().then(({ data: { session } }) => { setSession(session); setAuthLoading(false); });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => { setSession(session); });
     return () => subscription.unsubscribe();
   }, []);
 
-  // ── Load data ─────────────────────────────────────────────────────────────
   useEffect(()=>{
     if (!session) return;
     (async () => {
@@ -363,44 +505,25 @@ export default function App() {
           db.get("valuations", "?order=date.asc"),
           db.get("clients", "?order=created_at.asc"),
         ]);
-        const merged = (objs||[]).map((o) => ({
-          ...o,
-          valuations: (vals||[]).filter((v)=>v.object_id===o.id).map((v)=>({ date:v.date, value:+v.value, note:v.note||"", _id:v.id })),
-        }));
-        setObjects(merged);
-        setClients(cls||[]);
+        const merged = (objs||[]).map((o) => ({ ...o, valuations: (vals||[]).filter((v)=>v.object_id===o.id).map((v)=>({ date:v.date, value:+v.value, note:v.note||"", _id:v.id })) }));
+        setObjects(merged); setClients(cls||[]);
       } catch(e) { console.error(e); }
       setLoading(false);
     })();
   }, [session]);
 
-  // ── Portfolio chart (unassigned objects) ─────────────────────────────────
   const portfolioObjects = objects.filter(o => !o.client_id);
-
-  const portfolioChart = useMemo(()=>{
-    const dates = [...new Set(portfolioObjects.flatMap((o)=>o.valuations.map((v)=>v.date)))].sort();
-    return dates.map((date)=>{ let total=0; portfolioObjects.forEach((obj)=>{ const s=[...obj.valuations].sort((a,b)=>a.date.localeCompare(b.date)); const before=s.filter((v)=>v.date<=date); if(before.length) total+=before[before.length-1].value; }); return { date:fmtAxis(date), total }; });
-  }, [portfolioObjects]);
-
+  const portfolioChart = useMemo(()=>{ const dates=[...new Set(portfolioObjects.flatMap((o)=>o.valuations.map((v)=>v.date)))].sort(); return dates.map((date)=>{ let total=0; portfolioObjects.forEach((obj)=>{ const s=[...obj.valuations].sort((a,b)=>a.date.localeCompare(b.date)); const before=s.filter((v)=>v.date<=date); if(before.length) total+=before[before.length-1].value; }); return { date:fmtAxis(date), total }; }); }, [portfolioObjects]);
   const objectChart = useMemo(()=>{ if(!selected) return []; return [...selected.valuations].sort((a,b)=>a.date.localeCompare(b.date)).map((v)=>({ date:fmtAxis(v.date), value:v.value })); }, [selected]);
-
   const portStats = useMemo(()=> calcPortStats(portfolioObjects), [portfolioObjects]);
+  const objStats = useMemo(()=>{ if (!selected?.valuations?.length) return null; const s=[...selected.valuations].sort((a,b)=>a.date.localeCompare(b.date)); const first=s[0], last=s[s.length-1]; return { first, last, change:last.value-first.value, changePct:pct(first.value,last.value) }; }, [selected]);
 
-  const objStats = useMemo(()=>{
-    if (!selected?.valuations?.length) return null;
-    const s=[...selected.valuations].sort((a,b)=>a.date.localeCompare(b.date));
-    const first=s[0], last=s[s.length-1];
-    return { first, last, change:last.value-first.value, changePct:pct(first.value,last.value) };
-  }, [selected]);
-
-  // ── Handlers ─────────────────────────────────────────────────────────────
   const addObject = async () => {
     if (!newObj.title||!newObj.artist) return;
     const body = { title:newObj.title, artist:newObj.artist, medium:newObj.medium, year:+newObj.year||null, category:newObj.category };
     if (newObj.client_id) body.client_id = newObj.client_id;
     const rows = await db.post("objects", body);
-    const created = rows[0];
-    if (!created) return;
+    const created = rows[0]; if (!created) return;
     setObjects((p)=>[...p, { ...created, valuations:[] }]);
     setNewObj({ title:"", artist:"", medium:"", year:"", category:"Painting", client_id:"" });
     setSelectedId(created.id); setView("object"); notify("Object added");
@@ -409,15 +532,13 @@ export default function App() {
   const addValuation = async () => {
     if (!newVal.date||!newVal.value||!selectedId) return;
     const rows = await db.post("valuations", { object_id:selectedId, date:newVal.date, value:+newVal.value, note:newVal.note });
-    const created = rows[0];
-    if (!created) return;
+    const created = rows[0]; if (!created) return;
     setObjects((p)=>p.map((o)=>o.id===selectedId?{ ...o, valuations:[...o.valuations, { date:created.date, value:+created.value, note:created.note||"", _id:created.id }] }:o));
     setNewVal({ date:"", value:"", note:"" }); setShowAddVal(false); notify("Valuation saved");
   };
 
   const saveEdit = async () => {
-    const body = { title:editObj.title, artist:editObj.artist, medium:editObj.medium, year:+editObj.year||null, category:editObj.category };
-    if (editObj.client_id !== undefined) body.client_id = editObj.client_id || null;
+    const body = { title:editObj.title, artist:editObj.artist, medium:editObj.medium, year:+editObj.year||null, category:editObj.category, client_id:editObj.client_id||null };
     await db.patch("objects", selectedId, body);
     setObjects((p)=>p.map((o)=>o.id===selectedId?{ ...o, ...editObj, year:+editObj.year }:o));
     setEditMode(false); setEditObj(null); notify("Object updated");
@@ -430,7 +551,6 @@ export default function App() {
   };
 
   const importParse = () => { try { const rows=parseCSV(importText); if(!rows.length) throw new Error("No rows"); setImportMapped(rows); setImportStep(2); setImportError(""); } catch(e) { setImportError(e.message); } };
-
   const importConfirm = async () => {
     if (!importMapped) return;
     const grouped = {};
@@ -444,43 +564,18 @@ export default function App() {
     setImportText(""); setImportMapped(null); setImportStep(1); setView("portfolio"); notify("Import complete");
   };
 
-  const NAV = [
-    { key:"portfolio", label:"Portfolio" },
-    { key:"clients",   label:"Clients" },
-    { key:"object",    label:"Object", disabled:!selected },
-    { key:"add",       label:"+ Add" },
-    { key:"import",    label:"CSV" },
-  ];
+  const NAV = [{ key:"portfolio", label:"Portfolio" }, { key:"clients", label:"Clients" }, { key:"object", label:"Object", disabled:!selected }, { key:"add", label:"+ Add" }, { key:"import", label:"CSV" }];
 
-  // ── Auth gate ─────────────────────────────────────────────────────────────
-  if (authLoading) return (
-    <div style={{ background:C.bg, minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"Georgia, serif" }}>
-      <div style={{ color:C.dim, fontSize:12 }}>Loading…</div>
-    </div>
-  );
-
+  if (authLoading) return <div style={{ background:C.bg, minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"Georgia, serif" }}><div style={{ color:C.dim, fontSize:12 }}>Loading…</div></div>;
   if (!session) return <LoginScreen />;
-
-  if (loading) return (
-    <div style={{ background:C.bg, minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"Georgia, serif" }}>
-      <div style={{ textAlign:"center" }}>
-        <div style={{ color:C.gold, fontSize:22, letterSpacing:"0.14em", marginBottom:12 }}>PROVENANCE</div>
-        <div style={{ color:C.dim, fontSize:12 }}>Loading collection…</div>
-      </div>
-    </div>
-  );
+  if (loading) return <div style={{ background:C.bg, minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"Georgia, serif" }}><div style={{ textAlign:"center" }}><div style={{ color:C.gold, fontSize:22, letterSpacing:"0.14em", marginBottom:12 }}>PROVENANCE</div><div style={{ color:C.dim, fontSize:12 }}>Loading collection…</div></div></div>;
 
   return (
     <div style={{ background:C.bg, minHeight:"100vh", color:C.text, fontFamily:"'Georgia', serif", overflowX:"hidden" }}>
       {confirmDelete&&selected&&<ConfirmModal title={selected.title} onConfirm={deleteObject} onCancel={()=>setConfirmDelete(false)} />}
-
-      {/* Header */}
       <div style={{ borderBottom:`1px solid ${C.border}`, padding:"14px 16px", boxSizing:"border-box", width:"100%" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:11 }}>
-          <div>
-            <div style={{ fontSize:17, letterSpacing:"0.14em", color:C.gold }}>PROVENANCE</div>
-            <div style={{ fontSize:9, letterSpacing:"0.2em", color:C.dim, textTransform:"uppercase", marginTop:2 }}>Collection Value Intelligence</div>
-          </div>
+          <div><div style={{ fontSize:17, letterSpacing:"0.14em", color:C.gold }}>PROVENANCE</div><div style={{ fontSize:9, letterSpacing:"0.2em", color:C.dim, textTransform:"uppercase", marginTop:2 }}>Collection Value Intelligence</div></div>
           <button style={mkBtn("ghost", { fontSize:9, padding:"5px 10px", marginTop:2 })} onClick={() => supabase.auth.signOut()}>Sign out</button>
         </div>
         <div style={{ display:"flex", gap:5, overflowX:"auto", paddingBottom:1, WebkitOverflowScrolling:"touch" }}>
@@ -493,7 +588,6 @@ export default function App() {
 
       <div style={{ padding:"18px 16px", boxSizing:"border-box", width:"100%", maxWidth:860, margin:"0 auto" }}>
 
-        {/* ── PORTFOLIO ── */}
         {view==="portfolio"&&(<>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
             <StatCard lbl="Total Value" val={fmt(portStats.cur)} />
@@ -501,44 +595,14 @@ export default function App() {
             <StatCard lbl="Objects" val={portfolioObjects.length} />
             <StatCard lbl="Acquisition Cost" val={fmt(portStats.acq)} />
           </div>
-          {portfolioChart.length>0&&<div style={CARD}>
-            <div style={SEC}>Portfolio Value Over Time</div>
-            <ResponsiveContainer width="100%" height={190}><LineChart data={portfolioChart} margin={{ top:4, right:4, left:0, bottom:0 }}><CartesianGrid strokeDasharray="3 3" stroke={C.active} /><XAxis dataKey="date" tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={{ stroke:C.border }} /><YAxis tickFormatter={fmtShort} tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={false} width={44} /><Tooltip content={<ChartTip />} /><Line type="monotone" dataKey="total" stroke={C.gold} strokeWidth={2} dot={{ fill:C.gold, r:3 }} activeDot={{ r:5 }} name="Total Value" /></LineChart></ResponsiveContainer>
-          </div>}
+          {portfolioChart.length>0&&<div style={CARD}><div style={SEC}>Portfolio Value Over Time</div><ResponsiveContainer width="100%" height={190}><LineChart data={portfolioChart} margin={{ top:4, right:4, left:0, bottom:0 }}><CartesianGrid strokeDasharray="3 3" stroke={C.active} /><XAxis dataKey="date" tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={{ stroke:C.border }} /><YAxis tickFormatter={fmtShort} tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={false} width={44} /><Tooltip content={<ChartTip />} /><Line type="monotone" dataKey="total" stroke={C.gold} strokeWidth={2} dot={{ fill:C.gold, r:3 }} activeDot={{ r:5 }} name="Total Value" /></LineChart></ResponsiveContainer></div>}
           {portfolioObjects.length===0&&<div style={{ textAlign:"center", padding:"40px 0", color:C.dim, fontSize:13 }}>No unassigned objects. Add objects or assign them to clients.</div>}
-          {portfolioObjects.length>0&&<><div style={SEC}>Unassigned Objects</div>
-          {portfolioObjects.map((obj)=>{
-            const s=[...obj.valuations].sort((a,b)=>a.date.localeCompare(b.date)), cur=s[s.length-1]?.value||0, fst=s[0]?.value||0, g=fst?pct(fst,cur):null;
-            return (<div key={obj.id} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px", cursor:"pointer", borderRadius:2, marginBottom:4, background:selectedId===obj.id?C.active:"transparent", border:`1px solid ${selectedId===obj.id?C.gold+"44":"transparent"}`, boxSizing:"border-box" }}
-              onClick={()=>{ setSelectedId(obj.id); setView("object"); }}>
-              <div style={{ flex:1, minWidth:0, paddingRight:10 }}><div style={{ fontSize:14, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{obj.title}</div><div style={{ fontSize:11, color:C.dim, marginTop:2 }}>{obj.artist} · {obj.year}</div></div>
-              <div style={{ textAlign:"right", flexShrink:0 }}><div style={{ fontSize:14, color:C.gold }}>{fmt(cur)}</div>{g!==null&&<div style={{ fontSize:11, color:cur>=fst?C.green:C.red, marginTop:1 }}>{cur>=fst?"▲":"▼"} {Math.abs(g)}%</div>}</div>
-            </div>);
-          })}</>}
+          {portfolioObjects.length>0&&<><div style={SEC}>Unassigned Objects</div>{portfolioObjects.map((obj)=>{ const s=[...obj.valuations].sort((a,b)=>a.date.localeCompare(b.date)), cur=s[s.length-1]?.value||0, fst=s[0]?.value||0, g=fst?pct(fst,cur):null; return (<div key={obj.id} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px", cursor:"pointer", borderRadius:2, marginBottom:4, background:selectedId===obj.id?C.active:"transparent", border:`1px solid ${selectedId===obj.id?C.gold+"44":"transparent"}`, boxSizing:"border-box" }} onClick={()=>{ setSelectedId(obj.id); setView("object"); }}><div style={{ flex:1, minWidth:0, paddingRight:10 }}><div style={{ fontSize:14, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{obj.title}</div><div style={{ fontSize:11, color:C.dim, marginTop:2 }}>{obj.artist} · {obj.year}</div></div><div style={{ textAlign:"right", flexShrink:0 }}><div style={{ fontSize:14, color:C.gold }}>{fmt(cur)}</div>{g!==null&&<div style={{ fontSize:11, color:cur>=fst?C.green:C.red, marginTop:1 }}>{cur>=fst?"▲":"▼"} {Math.abs(g)}%</div>}</div></div>); })}</>}
         </>)}
 
-        {/* ── CLIENTS ── */}
-        {view==="clients"&&!selectedClient&&(
-          <ClientsView
-            clients={clients}
-            objects={objects}
-            session={session}
-            onSelectClient={c=>setSelectedClient(c)}
-            onClientAdded={c=>setClients(p=>[...p,c])}
-          />
-        )}
+        {view==="clients"&&!selectedClient&&<ClientsView clients={clients} objects={objects} session={session} onSelectClient={c=>setSelectedClient(c)} onClientAdded={c=>setClients(p=>[...p,c])} />}
+        {view==="clients"&&selectedClient&&<ClientPortfolioView client={selectedClient} objects={objects} onBack={()=>setSelectedClient(null)} onSelectObject={obj=>{ setSelectedId(obj.id); setView("object"); }} />}
 
-        {view==="clients"&&selectedClient&&(
-          <ClientPortfolioView
-            client={selectedClient}
-            objects={objects}
-            session={session}
-            onBack={()=>setSelectedClient(null)}
-            onSelectObject={obj=>{ setSelectedId(obj.id); setView("object"); }}
-          />
-        )}
-
-        {/* ── OBJECT ── */}
         {view==="object"&&selected&&(<>
           {editMode&&editObj ? (
             <div style={{ marginBottom:16 }}>
@@ -550,20 +614,17 @@ export default function App() {
                   <div><label style={LBL}>Year</label><input style={mkInput()} type="number" value={editObj.year} onChange={(e)=>setEditObj({...editObj,year:e.target.value})} /></div>
                   <div><label style={LBL}>Medium</label><input style={mkInput()} value={editObj.medium} onChange={(e)=>setEditObj({...editObj,medium:e.target.value})} /></div>
                   <div><label style={LBL}>Category</label><select style={mkInput()} value={editObj.category} onChange={(e)=>setEditObj({...editObj,category:e.target.value})}>{["Painting","Sculpture","Works on Paper","Photography","Decorative Arts","Jewellery","Furniture","Other"].map((c)=><option key={c}>{c}</option>)}</select></div>
-                  <div style={{ gridColumn:"1/-1" }}><label style={LBL}>Assign to Client</label>
-                    <select style={mkInput()} value={editObj.client_id||""} onChange={e=>setEditObj({...editObj,client_id:e.target.value||null})}>
-                      <option value="">— Unassigned —</option>
-                      {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
-                  </div>
+                  <div style={{ gridColumn:"1/-1" }}><label style={LBL}>Assign to Client</label><select style={mkInput()} value={editObj.client_id||""} onChange={e=>setEditObj({...editObj,client_id:e.target.value||null})}><option value="">— Unassigned —</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
                 </div>
                 <div style={{ display:"flex", gap:10 }}><button style={mkBtn("primary")} onClick={saveEdit}>Save</button><button style={mkBtn("ghost")} onClick={()=>{ setEditMode(false); setEditObj(null); }}>Cancel</button></div>
               </div>
             </div>
           ) : (<>
             <div style={{ marginBottom:16 }}>
-              <div style={{ marginBottom:10 }}><div style={{ fontSize:22, lineHeight:1.2, marginBottom:3 }}>{selected.title}</div><div style={{ fontSize:12, color:C.muted }}>{selected.artist} · {selected.year} · {selected.medium}</div>
-              {selected.client_id && <div style={{ fontSize:11, color:C.gold, marginTop:3 }}>{clients.find(c=>c.id===selected.client_id)?.name}</div>}
+              <div style={{ marginBottom:10 }}>
+                <div style={{ fontSize:22, lineHeight:1.2, marginBottom:3 }}>{selected.title}</div>
+                <div style={{ fontSize:12, color:C.muted }}>{selected.artist} · {selected.year} · {selected.medium}</div>
+                {selected.client_id && <div style={{ fontSize:11, color:C.gold, marginTop:3 }}>{clients.find(c=>c.id===selected.client_id)?.name}</div>}
               </div>
               <div style={{ display:"flex", gap:6 }}>
                 <button style={mkBtn("ghost",{ fontSize:10, padding:"5px 12px" })} onClick={()=>setView("portfolio")}>← Back</button>
@@ -577,10 +638,7 @@ export default function App() {
               <StatCard lbl="Acquired" val={fmt(objStats.first.value)} sub={fmtDate(objStats.first.date)} />
               <StatCard lbl="Valuations" val={selected.valuations.length} />
             </div>}
-            {objectChart.length>0&&<div style={CARD}>
-              <div style={SEC}>Value History</div>
-              <ResponsiveContainer width="100%" height={170}><LineChart data={objectChart} margin={{ top:4, right:4, left:0, bottom:0 }}><CartesianGrid strokeDasharray="3 3" stroke={C.active} /><XAxis dataKey="date" tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={{ stroke:C.border }} /><YAxis tickFormatter={fmtShort} tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={false} width={44} /><Tooltip content={<ChartTip />} /><Line type="monotone" dataKey="value" stroke={C.gold} strokeWidth={2} dot={{ fill:C.gold, r:4 }} activeDot={{ r:6 }} name={selected.artist} /></LineChart></ResponsiveContainer>
-            </div>}
+            {objectChart.length>0&&<div style={CARD}><div style={SEC}>Value History</div><ResponsiveContainer width="100%" height={170}><LineChart data={objectChart} margin={{ top:4, right:4, left:0, bottom:0 }}><CartesianGrid strokeDasharray="3 3" stroke={C.active} /><XAxis dataKey="date" tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={{ stroke:C.border }} /><YAxis tickFormatter={fmtShort} tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={false} width={44} /><Tooltip content={<ChartTip />} /><Line type="monotone" dataKey="value" stroke={C.gold} strokeWidth={2} dot={{ fill:C.gold, r:4 }} activeDot={{ r:6 }} name={selected.artist} /></LineChart></ResponsiveContainer></div>}
             <ComparablesPanel key={selected.id} object={selected} />
             <div style={CARD}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, marginBottom:12 }}>
@@ -595,18 +653,11 @@ export default function App() {
                 </div>
                 <button style={mkBtn("primary")} onClick={addValuation}>Save</button>
               </div>}
-              {[...selected.valuations].sort((a,b)=>b.date.localeCompare(a.date)).map((v,i,arr)=>{
-                const prev=arr[i+1], chg=prev?v.value-prev.value:null, chgP=prev?pct(prev.value,v.value):null;
-                return (<div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10, padding:"10px 0", borderBottom:`1px solid ${C.border}`, background:i%2?C.inner+"88":"transparent" }}>
-                  <div style={{ flex:1, minWidth:0 }}><div style={{ fontSize:14, color:C.gold, marginBottom:2 }}>{fmt(v.value)}</div><div style={{ fontSize:11, color:C.dim }}>{fmtDate(v.date)}</div>{v.note&&<div style={{ fontSize:11, color:C.muted, marginTop:1 }}>{v.note}</div>}</div>
-                  <div style={{ textAlign:"right", flexShrink:0 }}>{chg!==null?(<><div style={{ fontSize:13, color:chg>=0?C.green:C.red }}>{chg>=0?"▲":"▼"} {fmt(Math.abs(chg))}</div><div style={{ fontSize:11, color:chg>=0?C.green:C.red, marginTop:1 }}>{Math.abs(chgP)}%</div></>):(<div style={{ fontSize:11, color:C.dim }}>Acquisition</div>)}</div>
-                </div>);
-              })}
+              {[...selected.valuations].sort((a,b)=>b.date.localeCompare(a.date)).map((v,i,arr)=>{ const prev=arr[i+1], chg=prev?v.value-prev.value:null, chgP=prev?pct(prev.value,v.value):null; return (<div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10, padding:"10px 0", borderBottom:`1px solid ${C.border}`, background:i%2?C.inner+"88":"transparent" }}><div style={{ flex:1, minWidth:0 }}><div style={{ fontSize:14, color:C.gold, marginBottom:2 }}>{fmt(v.value)}</div><div style={{ fontSize:11, color:C.dim }}>{fmtDate(v.date)}</div>{v.note&&<div style={{ fontSize:11, color:C.muted, marginTop:1 }}>{v.note}</div>}</div><div style={{ textAlign:"right", flexShrink:0 }}>{chg!==null?(<><div style={{ fontSize:13, color:chg>=0?C.green:C.red }}>{chg>=0?"▲":"▼"} {fmt(Math.abs(chg))}</div><div style={{ fontSize:11, color:chg>=0?C.green:C.red, marginTop:1 }}>{Math.abs(chgP)}%</div></>):(<div style={{ fontSize:11, color:C.dim }}>Acquisition</div>)}</div></div>); })}
             </div>
           </>)}
         </>)}
 
-        {/* ── ADD ── */}
         {view==="add"&&<div>
           <div style={{ fontSize:17, marginBottom:18 }}>Add Object</div>
           <div style={CARD}>
@@ -616,18 +667,12 @@ export default function App() {
               <div><label style={LBL}>Year</label><input style={mkInput()} type="number" value={newObj.year} onChange={(e)=>setNewObj({...newObj,year:e.target.value})} placeholder="e.g. 1952" /></div>
               <div><label style={LBL}>Medium</label><input style={mkInput()} value={newObj.medium} onChange={(e)=>setNewObj({...newObj,medium:e.target.value})} placeholder="e.g. Oil on canvas" /></div>
               <div><label style={LBL}>Category</label><select style={mkInput()} value={newObj.category} onChange={(e)=>setNewObj({...newObj,category:e.target.value})}>{["Painting","Sculpture","Works on Paper","Photography","Decorative Arts","Jewellery","Furniture","Other"].map((c)=><option key={c}>{c}</option>)}</select></div>
-              {clients.length>0&&<div style={{ gridColumn:"1/-1" }}><label style={LBL}>Assign to Client (optional)</label>
-                <select style={mkInput()} value={newObj.client_id} onChange={e=>setNewObj({...newObj,client_id:e.target.value})}>
-                  <option value="">— Unassigned —</option>
-                  {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </div>}
+              {clients.length>0&&<div style={{ gridColumn:"1/-1" }}><label style={LBL}>Assign to Client (optional)</label><select style={mkInput()} value={newObj.client_id} onChange={e=>setNewObj({...newObj,client_id:e.target.value})}><option value="">— Unassigned —</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>}
             </div>
             <button style={mkBtn("primary")} onClick={addObject}>Add to Collection</button>
           </div>
         </div>}
 
-        {/* ── IMPORT ── */}
         {view==="import"&&<div>
           <div style={{ fontSize:17, marginBottom:5 }}>Import CSV</div>
           <div style={{ fontSize:12, color:C.dim, marginBottom:18, lineHeight:1.6 }}>Columns: <span style={{ color:C.gold }}>title, artist, medium, year, category, date, value, note</span></div>
@@ -638,5 +683,16 @@ export default function App() {
       </div>
       {toast&&<div style={{ position:"fixed", bottom:18, right:18, background:C.gold, color:C.bg, padding:"9px 16px", borderRadius:2, fontSize:12, letterSpacing:"0.05em", fontFamily:"Georgia, serif", boxShadow:"0 4px 14px #00000066", zIndex:999 }}>{toast}</div>}
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/client/:slug" element={<PublicClientView />} />
+        <Route path="*" element={<AdvisorApp />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
