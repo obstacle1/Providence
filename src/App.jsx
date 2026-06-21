@@ -45,6 +45,7 @@ const fmtShort = (n) => n >= 1e6 ? "$" + (n / 1e6).toFixed(1) + "M" : "$" + (n /
 const fmtDate = (d) => { if (!d) return "—"; const p = d.split("-"); const m = MONTHS[+p[1]-1]||""; return p.length===2?`${m} '${p[0].slice(2)}`:`${m} ${+p[2]}, ${p[0]}`; };
 const fmtAxis = (d) => { if (!d) return ""; const p = d.split("-"); return `${MONTHS[+p[1]-1]||""} '${p[0].slice(2)}`; };
 const pct = (a, b) => (((b - a) / a) * 100).toFixed(1);
+const slugify = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 
 function parseCSV(text) {
   const lines = text.trim().split("\n");
@@ -177,11 +178,7 @@ function LoginScreen() {
       <div style={{ textAlign:"center", maxWidth:280 }}>
         <div style={{ color:C.gold, fontSize:24, letterSpacing:"0.18em", marginBottom:6 }}>PROVENANCE</div>
         <div style={{ color:C.dim, fontSize:11, letterSpacing:"0.16em", textTransform:"uppercase", marginBottom:40 }}>Collection Value Intelligence</div>
-        <button
-          style={mkBtn("primary", { fontSize:12, padding:"12px 28px", letterSpacing:"0.12em", opacity: loading ? 0.6 : 1 })}
-          onClick={handleLogin}
-          disabled={loading}
-        >
+        <button style={mkBtn("primary", { fontSize:12, padding:"12px 28px", letterSpacing:"0.12em", opacity: loading ? 0.6 : 1 })} onClick={handleLogin} disabled={loading}>
           {loading ? "Redirecting…" : "Sign in with Google"}
         </button>
       </div>
@@ -189,24 +186,157 @@ function LoginScreen() {
   );
 }
 
+// ── Portfolio stats helper ────────────────────────────────────────────────────
+function calcPortStats(objects) {
+  const totals = objects.map((o) => { const s=[...o.valuations].sort((a,b)=>a.date.localeCompare(b.date)); return { first:s[0]?.value||0, last:s[s.length-1]?.value||0 }; });
+  const cur=totals.reduce((acc,t)=>acc+t.last,0), acq=totals.reduce((acc,t)=>acc+t.first,0), gain=cur-acq;
+  return { cur, acq, gain, gainPct:acq?((gain/acq)*100).toFixed(1):"0.0" };
+}
+
+// ── Clients view ──────────────────────────────────────────────────────────────
+function ClientsView({ clients, objects, onSelectClient, session, onClientAdded }) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [newClient, setNewClient] = useState({ name:"", email:"" });
+  const [saving, setSaving] = useState(false);
+
+  const addClient = async () => {
+    if (!newClient.name) return;
+    setSaving(true);
+    const slug = slugify(newClient.name) + "-" + Math.random().toString(36).slice(2,6);
+    const rows = await db.post("clients", { name:newClient.name, email:newClient.email||null, slug, advisor_id:session.user.id });
+    if (rows[0]) { onClientAdded(rows[0]); setNewClient({ name:"", email:"" }); setShowAdd(false); }
+    setSaving(false);
+  };
+
+  return (
+    <div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+        <div style={{ fontSize:17 }}>Clients</div>
+        <button style={mkBtn("secondary", { fontSize:10, padding:"5px 12px" })} onClick={()=>setShowAdd(v=>!v)}>{showAdd?"Cancel":"+ New Client"}</button>
+      </div>
+
+      {showAdd && (
+        <div style={CARD}>
+          <div style={{ display:"grid", gap:11, marginBottom:13 }}>
+            <div><label style={LBL}>Client Name</label><input style={mkInput()} value={newClient.name} onChange={e=>setNewClient({...newClient,name:e.target.value})} placeholder="e.g. Sarah Chen" /></div>
+            <div><label style={LBL}>Email (optional)</label><input style={mkInput()} value={newClient.email} onChange={e=>setNewClient({...newClient,email:e.target.value})} placeholder="client@example.com" /></div>
+          </div>
+          <button style={mkBtn("primary", { opacity:saving?0.6:1 })} onClick={addClient} disabled={saving}>{saving?"Saving…":"Add Client"}</button>
+        </div>
+      )}
+
+      {clients.length === 0 && !showAdd && (
+        <div style={{ textAlign:"center", padding:"40px 0", color:C.dim, fontSize:13 }}>No clients yet. Add your first client above.</div>
+      )}
+
+      {clients.map(client => {
+        const clientObjs = objects.filter(o => o.client_id === client.id);
+        const stats = calcPortStats(clientObjs);
+        return (
+          <div key={client.id}
+            style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px", cursor:"pointer", borderRadius:2, marginBottom:6, background:C.card, border:`1px solid ${C.border}`, boxSizing:"border-box" }}
+            onClick={() => onSelectClient(client)}>
+            <div style={{ flex:1, minWidth:0, paddingRight:10 }}>
+              <div style={{ fontSize:15 }}>{client.name}</div>
+              <div style={{ fontSize:11, color:C.dim, marginTop:2 }}>{clientObjs.length} object{clientObjs.length!==1?"s":""}{client.email ? ` · ${client.email}` : ""}</div>
+            </div>
+            <div style={{ textAlign:"right", flexShrink:0 }}>
+              <div style={{ fontSize:14, color:C.gold }}>{fmt(stats.cur)}</div>
+              {stats.cur > 0 && <div style={{ fontSize:11, color:stats.gain>=0?C.green:C.red, marginTop:1 }}>{stats.gain>=0?"▲":"▼"} {Math.abs(stats.gainPct)}%</div>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Client portfolio view ─────────────────────────────────────────────────────
+function ClientPortfolioView({ client, objects, onBack, onSelectObject, session }) {
+  const clientObjs = objects.filter(o => o.client_id === client.id);
+  const stats = calcPortStats(clientObjs);
+  const shareUrl = `${window.location.origin}/client/${client.slug}`;
+
+  const portfolioChart = useMemo(() => {
+    const dates = [...new Set(clientObjs.flatMap(o=>o.valuations.map(v=>v.date)))].sort();
+    return dates.map(date => { let total=0; clientObjs.forEach(obj=>{ const s=[...obj.valuations].sort((a,b)=>a.date.localeCompare(b.date)); const before=s.filter(v=>v.date<=date); if(before.length) total+=before[before.length-1].value; }); return { date:fmtAxis(date), total }; });
+  }, [clientObjs]);
+
+  const copyLink = () => { navigator.clipboard.writeText(shareUrl); };
+
+  return (
+    <div>
+      <div style={{ marginBottom:16 }}>
+        <button style={mkBtn("ghost",{ fontSize:10, padding:"5px 12px", marginBottom:10 })} onClick={onBack}>← Clients</button>
+        <div style={{ fontSize:22, marginBottom:4 }}>{client.name}</div>
+        {client.email && <div style={{ fontSize:12, color:C.muted, marginBottom:8 }}>{client.email}</div>}
+        <div style={{ display:"flex", alignItems:"center", gap:8, background:C.inner, border:`1px solid ${C.border}`, borderRadius:2, padding:"8px 10px" }}>
+          <div style={{ fontSize:11, color:C.dim, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{shareUrl}</div>
+          <button style={mkBtn("secondary",{ fontSize:9, padding:"4px 10px" })} onClick={copyLink}>Copy Link</button>
+        </div>
+      </div>
+
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
+        <StatCard lbl="Total Value" val={fmt(stats.cur)} />
+        <StatCard lbl="Total Gain" val={fmt(stats.gain)} sub={`${stats.gain>=0?"▲":"▼"} ${Math.abs(stats.gainPct)}%`} subColor={stats.gain>=0?C.green:C.red} />
+        <StatCard lbl="Objects" val={clientObjs.length} />
+        <StatCard lbl="Acquisition Cost" val={fmt(stats.acq)} />
+      </div>
+
+      {portfolioChart.length > 0 && (
+        <div style={CARD}>
+          <div style={SEC}>Portfolio Value Over Time</div>
+          <ResponsiveContainer width="100%" height={190}><LineChart data={portfolioChart} margin={{ top:4, right:4, left:0, bottom:0 }}><CartesianGrid strokeDasharray="3 3" stroke={C.active} /><XAxis dataKey="date" tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={{ stroke:C.border }} /><YAxis tickFormatter={fmtShort} tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={false} width={44} /><Tooltip content={<ChartTip />} /><Line type="monotone" dataKey="total" stroke={C.gold} strokeWidth={2} dot={{ fill:C.gold, r:3 }} activeDot={{ r:5 }} name="Total Value" /></LineChart></ResponsiveContainer>
+        </div>
+      )}
+
+      {clientObjs.length === 0 && (
+        <div style={{ textAlign:"center", padding:"30px 0", color:C.dim, fontSize:13 }}>No objects yet. Add objects and assign them to {client.name}.</div>
+      )}
+
+      {clientObjs.length > 0 && <>
+        <div style={SEC}>Collection</div>
+        {clientObjs.map(obj => {
+          const s=[...obj.valuations].sort((a,b)=>a.date.localeCompare(b.date)), cur=s[s.length-1]?.value||0, fst=s[0]?.value||0, g=fst?pct(fst,cur):null;
+          return (
+            <div key={obj.id} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px", cursor:"pointer", borderRadius:2, marginBottom:4, background:C.card, border:`1px solid ${C.border}`, boxSizing:"border-box" }}
+              onClick={() => onSelectObject(obj)}>
+              <div style={{ flex:1, minWidth:0, paddingRight:10 }}>
+                <div style={{ fontSize:14, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{obj.title}</div>
+                <div style={{ fontSize:11, color:C.dim, marginTop:2 }}>{obj.artist} · {obj.year}</div>
+              </div>
+              <div style={{ textAlign:"right", flexShrink:0 }}>
+                <div style={{ fontSize:14, color:C.gold }}>{fmt(cur)}</div>
+                {g!==null&&<div style={{ fontSize:11, color:cur>=fst?C.green:C.red, marginTop:1 }}>{cur>=fst?"▲":"▼"} {Math.abs(g)}%</div>}
+              </div>
+            </div>
+          );
+        })}
+      </>}
+    </div>
+  );
+}
+
 export default function App() {
-  const [session,      setSession]      = useState(null);
-  const [authLoading,  setAuthLoading]  = useState(true);
-  const [objects,      setObjects]      = useState([]);
-  const [loading,      setLoading]      = useState(true);
-  const [selectedId,   setSelectedId]   = useState(null);
-  const [view,         setView]         = useState("portfolio");
-  const [newObj,       setNewObj]       = useState({ title:"", artist:"", medium:"", year:"", category:"Painting" });
-  const [newVal,       setNewVal]       = useState({ date:"", value:"", note:"" });
-  const [importText,   setImportText]   = useState("");
-  const [importError,  setImportError]  = useState("");
-  const [importStep,   setImportStep]   = useState(1);
-  const [importMapped, setImportMapped] = useState(null);
-  const [showAddVal,   setShowAddVal]   = useState(false);
-  const [toast,        setToast]        = useState(null);
-  const [editMode,     setEditMode]     = useState(false);
-  const [editObj,      setEditObj]      = useState(null);
-  const [confirmDelete,setConfirmDelete]= useState(false);
+  const [session,       setSession]       = useState(null);
+  const [authLoading,   setAuthLoading]   = useState(true);
+  const [objects,       setObjects]       = useState([]);
+  const [clients,       setClients]       = useState([]);
+  const [loading,       setLoading]       = useState(true);
+  const [selectedId,    setSelectedId]    = useState(null);
+  const [selectedClient,setSelectedClient]= useState(null);
+  const [view,          setView]          = useState("portfolio");
+  const [newObj,        setNewObj]        = useState({ title:"", artist:"", medium:"", year:"", category:"Painting", client_id:"" });
+  const [newVal,        setNewVal]        = useState({ date:"", value:"", note:"" });
+  const [importText,    setImportText]    = useState("");
+  const [importError,   setImportError]   = useState("");
+  const [importStep,    setImportStep]    = useState(1);
+  const [importMapped,  setImportMapped]  = useState(null);
+  const [showAddVal,    setShowAddVal]    = useState(false);
+  const [toast,         setToast]         = useState(null);
+  const [editMode,      setEditMode]      = useState(false);
+  const [editObj,       setEditObj]       = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const notify = (msg) => { setToast(msg); setTimeout(()=>setToast(null), 2800); };
   const selected = objects.find((o)=>o.id===selectedId);
@@ -223,36 +353,38 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // ── Load from Supabase on mount ──────────────────────────────────────────
+  // ── Load data ─────────────────────────────────────────────────────────────
   useEffect(()=>{
     if (!session) return;
     (async () => {
       try {
-        const objs = await db.get("objects", "?order=created_at.asc");
-        const vals = await db.get("valuations", "?order=date.asc");
+        const [objs, vals, cls] = await Promise.all([
+          db.get("objects", "?order=created_at.asc"),
+          db.get("valuations", "?order=date.asc"),
+          db.get("clients", "?order=created_at.asc"),
+        ]);
         const merged = (objs||[]).map((o) => ({
           ...o,
           valuations: (vals||[]).filter((v)=>v.object_id===o.id).map((v)=>({ date:v.date, value:+v.value, note:v.note||"", _id:v.id })),
         }));
         setObjects(merged);
+        setClients(cls||[]);
       } catch(e) { console.error(e); }
       setLoading(false);
     })();
   }, [session]);
 
-  // ── Portfolio chart ──────────────────────────────────────────────────────
+  // ── Portfolio chart (unassigned objects) ─────────────────────────────────
+  const portfolioObjects = objects.filter(o => !o.client_id);
+
   const portfolioChart = useMemo(()=>{
-    const dates = [...new Set(objects.flatMap((o)=>o.valuations.map((v)=>v.date)))].sort();
-    return dates.map((date)=>{ let total=0; objects.forEach((obj)=>{ const s=[...obj.valuations].sort((a,b)=>a.date.localeCompare(b.date)); const before=s.filter((v)=>v.date<=date); if(before.length) total+=before[before.length-1].value; }); return { date:fmtAxis(date), total }; });
-  }, [objects]);
+    const dates = [...new Set(portfolioObjects.flatMap((o)=>o.valuations.map((v)=>v.date)))].sort();
+    return dates.map((date)=>{ let total=0; portfolioObjects.forEach((obj)=>{ const s=[...obj.valuations].sort((a,b)=>a.date.localeCompare(b.date)); const before=s.filter((v)=>v.date<=date); if(before.length) total+=before[before.length-1].value; }); return { date:fmtAxis(date), total }; });
+  }, [portfolioObjects]);
 
   const objectChart = useMemo(()=>{ if(!selected) return []; return [...selected.valuations].sort((a,b)=>a.date.localeCompare(b.date)).map((v)=>({ date:fmtAxis(v.date), value:v.value })); }, [selected]);
 
-  const portStats = useMemo(()=>{
-    const totals = objects.map((o)=>{ const s=[...o.valuations].sort((a,b)=>a.date.localeCompare(b.date)); return { first:s[0]?.value||0, last:s[s.length-1]?.value||0 }; });
-    const cur=totals.reduce((acc,t)=>acc+t.last,0), acq=totals.reduce((acc,t)=>acc+t.first,0), gain=cur-acq;
-    return { cur, acq, gain, gainPct:acq?((gain/acq)*100).toFixed(1):"0.0" };
-  }, [objects]);
+  const portStats = useMemo(()=> calcPortStats(portfolioObjects), [portfolioObjects]);
 
   const objStats = useMemo(()=>{
     if (!selected?.valuations?.length) return null;
@@ -264,11 +396,13 @@ export default function App() {
   // ── Handlers ─────────────────────────────────────────────────────────────
   const addObject = async () => {
     if (!newObj.title||!newObj.artist) return;
-    const rows = await db.post("objects", { title:newObj.title, artist:newObj.artist, medium:newObj.medium, year:+newObj.year||null, category:newObj.category });
+    const body = { title:newObj.title, artist:newObj.artist, medium:newObj.medium, year:+newObj.year||null, category:newObj.category };
+    if (newObj.client_id) body.client_id = newObj.client_id;
+    const rows = await db.post("objects", body);
     const created = rows[0];
     if (!created) return;
     setObjects((p)=>[...p, { ...created, valuations:[] }]);
-    setNewObj({ title:"", artist:"", medium:"", year:"", category:"Painting" });
+    setNewObj({ title:"", artist:"", medium:"", year:"", category:"Painting", client_id:"" });
     setSelectedId(created.id); setView("object"); notify("Object added");
   };
 
@@ -282,7 +416,9 @@ export default function App() {
   };
 
   const saveEdit = async () => {
-    await db.patch("objects", selectedId, { title:editObj.title, artist:editObj.artist, medium:editObj.medium, year:+editObj.year||null, category:editObj.category });
+    const body = { title:editObj.title, artist:editObj.artist, medium:editObj.medium, year:+editObj.year||null, category:editObj.category };
+    if (editObj.client_id !== undefined) body.client_id = editObj.client_id || null;
+    await db.patch("objects", selectedId, body);
     setObjects((p)=>p.map((o)=>o.id===selectedId?{ ...o, ...editObj, year:+editObj.year }:o));
     setEditMode(false); setEditObj(null); notify("Object updated");
   };
@@ -308,7 +444,13 @@ export default function App() {
     setImportText(""); setImportMapped(null); setImportStep(1); setView("portfolio"); notify("Import complete");
   };
 
-  const NAV = [{ key:"portfolio", label:"Portfolio" }, { key:"object", label:"Object", disabled:!selected }, { key:"add", label:"+ Add" }, { key:"import", label:"CSV" }];
+  const NAV = [
+    { key:"portfolio", label:"Portfolio" },
+    { key:"clients",   label:"Clients" },
+    { key:"object",    label:"Object", disabled:!selected },
+    { key:"add",       label:"+ Add" },
+    { key:"import",    label:"CSV" },
+  ];
 
   // ── Auth gate ─────────────────────────────────────────────────────────────
   if (authLoading) return (
@@ -344,7 +486,7 @@ export default function App() {
         <div style={{ display:"flex", gap:5, overflowX:"auto", paddingBottom:1, WebkitOverflowScrolling:"touch" }}>
           {NAV.map(({ key, label, disabled })=>(
             <button key={key} style={{ background:view===key?C.gold:"transparent", color:view===key?C.bg:disabled?C.dim:C.muted, border:`1px solid ${view===key?C.gold:C.border}`, padding:"6px 13px", cursor:disabled?"default":"pointer", fontSize:10, letterSpacing:"0.1em", textTransform:"uppercase", borderRadius:2, fontFamily:"Georgia, serif", whiteSpace:"nowrap", flexShrink:0, opacity:disabled?0.4:1 }}
-              onClick={()=>{ if(disabled) return; setView(key); }}>{label}</button>
+              onClick={()=>{ if(disabled) return; setView(key); setSelectedClient(null); }}>{label}</button>
           ))}
         </div>
       </div>
@@ -356,16 +498,16 @@ export default function App() {
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
             <StatCard lbl="Total Value" val={fmt(portStats.cur)} />
             <StatCard lbl="Total Gain" val={fmt(portStats.gain)} sub={`${portStats.gain>=0?"▲":"▼"} ${Math.abs(portStats.gainPct)}%`} subColor={portStats.gain>=0?C.green:C.red} />
-            <StatCard lbl="Objects" val={objects.length} />
+            <StatCard lbl="Objects" val={portfolioObjects.length} />
             <StatCard lbl="Acquisition Cost" val={fmt(portStats.acq)} />
           </div>
           {portfolioChart.length>0&&<div style={CARD}>
             <div style={SEC}>Portfolio Value Over Time</div>
             <ResponsiveContainer width="100%" height={190}><LineChart data={portfolioChart} margin={{ top:4, right:4, left:0, bottom:0 }}><CartesianGrid strokeDasharray="3 3" stroke={C.active} /><XAxis dataKey="date" tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={{ stroke:C.border }} /><YAxis tickFormatter={fmtShort} tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={false} width={44} /><Tooltip content={<ChartTip />} /><Line type="monotone" dataKey="total" stroke={C.gold} strokeWidth={2} dot={{ fill:C.gold, r:3 }} activeDot={{ r:5 }} name="Total Value" /></LineChart></ResponsiveContainer>
           </div>}
-          {objects.length===0&&<div style={{ textAlign:"center", padding:"40px 0", color:C.dim, fontSize:13 }}>No objects yet. Tap <span style={{ color:C.gold }}>+ Add</span> to get started.</div>}
-          {objects.length>0&&<><div style={SEC}>Objects</div>
-          {objects.map((obj)=>{
+          {portfolioObjects.length===0&&<div style={{ textAlign:"center", padding:"40px 0", color:C.dim, fontSize:13 }}>No unassigned objects. Add objects or assign them to clients.</div>}
+          {portfolioObjects.length>0&&<><div style={SEC}>Unassigned Objects</div>
+          {portfolioObjects.map((obj)=>{
             const s=[...obj.valuations].sort((a,b)=>a.date.localeCompare(b.date)), cur=s[s.length-1]?.value||0, fst=s[0]?.value||0, g=fst?pct(fst,cur):null;
             return (<div key={obj.id} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px", cursor:"pointer", borderRadius:2, marginBottom:4, background:selectedId===obj.id?C.active:"transparent", border:`1px solid ${selectedId===obj.id?C.gold+"44":"transparent"}`, boxSizing:"border-box" }}
               onClick={()=>{ setSelectedId(obj.id); setView("object"); }}>
@@ -374,6 +516,27 @@ export default function App() {
             </div>);
           })}</>}
         </>)}
+
+        {/* ── CLIENTS ── */}
+        {view==="clients"&&!selectedClient&&(
+          <ClientsView
+            clients={clients}
+            objects={objects}
+            session={session}
+            onSelectClient={c=>setSelectedClient(c)}
+            onClientAdded={c=>setClients(p=>[...p,c])}
+          />
+        )}
+
+        {view==="clients"&&selectedClient&&(
+          <ClientPortfolioView
+            client={selectedClient}
+            objects={objects}
+            session={session}
+            onBack={()=>setSelectedClient(null)}
+            onSelectObject={obj=>{ setSelectedId(obj.id); setView("object"); }}
+          />
+        )}
 
         {/* ── OBJECT ── */}
         {view==="object"&&selected&&(<>
@@ -387,13 +550,21 @@ export default function App() {
                   <div><label style={LBL}>Year</label><input style={mkInput()} type="number" value={editObj.year} onChange={(e)=>setEditObj({...editObj,year:e.target.value})} /></div>
                   <div><label style={LBL}>Medium</label><input style={mkInput()} value={editObj.medium} onChange={(e)=>setEditObj({...editObj,medium:e.target.value})} /></div>
                   <div><label style={LBL}>Category</label><select style={mkInput()} value={editObj.category} onChange={(e)=>setEditObj({...editObj,category:e.target.value})}>{["Painting","Sculpture","Works on Paper","Photography","Decorative Arts","Jewellery","Furniture","Other"].map((c)=><option key={c}>{c}</option>)}</select></div>
+                  <div style={{ gridColumn:"1/-1" }}><label style={LBL}>Assign to Client</label>
+                    <select style={mkInput()} value={editObj.client_id||""} onChange={e=>setEditObj({...editObj,client_id:e.target.value||null})}>
+                      <option value="">— Unassigned —</option>
+                      {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
                 </div>
                 <div style={{ display:"flex", gap:10 }}><button style={mkBtn("primary")} onClick={saveEdit}>Save</button><button style={mkBtn("ghost")} onClick={()=>{ setEditMode(false); setEditObj(null); }}>Cancel</button></div>
               </div>
             </div>
           ) : (<>
             <div style={{ marginBottom:16 }}>
-              <div style={{ marginBottom:10 }}><div style={{ fontSize:22, lineHeight:1.2, marginBottom:3 }}>{selected.title}</div><div style={{ fontSize:12, color:C.muted }}>{selected.artist} · {selected.year} · {selected.medium}</div></div>
+              <div style={{ marginBottom:10 }}><div style={{ fontSize:22, lineHeight:1.2, marginBottom:3 }}>{selected.title}</div><div style={{ fontSize:12, color:C.muted }}>{selected.artist} · {selected.year} · {selected.medium}</div>
+              {selected.client_id && <div style={{ fontSize:11, color:C.gold, marginTop:3 }}>{clients.find(c=>c.id===selected.client_id)?.name}</div>}
+              </div>
               <div style={{ display:"flex", gap:6 }}>
                 <button style={mkBtn("ghost",{ fontSize:10, padding:"5px 12px" })} onClick={()=>setView("portfolio")}>← Back</button>
                 <button style={mkBtn("secondary",{ fontSize:10, padding:"5px 12px" })} onClick={()=>{ setEditObj({...selected}); setEditMode(true); }}>Edit</button>
@@ -445,6 +616,12 @@ export default function App() {
               <div><label style={LBL}>Year</label><input style={mkInput()} type="number" value={newObj.year} onChange={(e)=>setNewObj({...newObj,year:e.target.value})} placeholder="e.g. 1952" /></div>
               <div><label style={LBL}>Medium</label><input style={mkInput()} value={newObj.medium} onChange={(e)=>setNewObj({...newObj,medium:e.target.value})} placeholder="e.g. Oil on canvas" /></div>
               <div><label style={LBL}>Category</label><select style={mkInput()} value={newObj.category} onChange={(e)=>setNewObj({...newObj,category:e.target.value})}>{["Painting","Sculpture","Works on Paper","Photography","Decorative Arts","Jewellery","Furniture","Other"].map((c)=><option key={c}>{c}</option>)}</select></div>
+              {clients.length>0&&<div style={{ gridColumn:"1/-1" }}><label style={LBL}>Assign to Client (optional)</label>
+                <select style={mkInput()} value={newObj.client_id} onChange={e=>setNewObj({...newObj,client_id:e.target.value})}>
+                  <option value="">— Unassigned —</option>
+                  {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>}
             </div>
             <button style={mkBtn("primary")} onClick={addObject}>Add to Collection</button>
           </div>
