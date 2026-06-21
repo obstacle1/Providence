@@ -229,29 +229,44 @@ async function generatePDF(client, objects, advisorEmail) {
   y += 5;
 
   // Object rows
-  objects.forEach((obj, idx) => {
-    if (y > 260) { doc.addPage(); y = 20; }
+  for (let idx = 0; idx < objects.length; idx++) {
+    const obj = objects[idx];
+    if (y > 250) { doc.addPage(); y = 20; }
     const s = [...obj.valuations].sort((a,b)=>a.date.localeCompare(b.date));
     const first = s[0], last = s[s.length - 1];
     const cur = last?.value || 0;
     const acq = first?.value || 0;
     const changePct = acq ? (((cur - acq) / acq) * 100).toFixed(1) : null;
+    const rowH = 18;
 
     if (idx % 2 === 0) {
       doc.setFillColor(250, 243, 236);
-      doc.rect(M - 2, y - 4, CW + 4, 13, 'F');
+      doc.rect(M - 2, y - 5, CW + 4, rowH, 'F');
+    }
+
+    // Thumbnail
+    const thumbSize = 14;
+    const textX = M + (obj.image_url ? thumbSize + 4 : 0);
+
+    if (obj.image_url) {
+      try {
+        const imgRes = await fetch(obj.image_url);
+        const imgBlob = await imgRes.blob();
+        const imgData = await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(imgBlob); });
+        doc.addImage(imgData, 'JPEG', M, y - 4, thumbSize, thumbSize);
+      } catch(e) { /* skip if image fails */ }
     }
 
     doc.setFontSize(9);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(51, 48, 46);
-    const title = obj.title.length > 30 ? obj.title.slice(0, 29) + '…' : obj.title;
-    doc.text(title, M, y);
+    const title = obj.title.length > 28 ? obj.title.slice(0, 27) + '…' : obj.title;
+    doc.text(title, textX, y);
     doc.setFontSize(7);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(102, 96, 92);
     const sub = [obj.artist, obj.year].filter(Boolean).join(' · ');
-    doc.text(sub, M, y + 4);
+    doc.text(sub, textX, y + 4);
 
     doc.setFontSize(9);
     doc.setTextColor(102, 96, 92);
@@ -268,8 +283,8 @@ async function generatePDF(client, objects, advisorEmail) {
       doc.text(`${gain ? '+' : ''}${changePct}%`, M + 160, y);
     }
 
-    y += 13;
-  });
+    y += rowH;
+  }
 
   y += 4;
   doc.setDrawColor(204, 193, 183);
