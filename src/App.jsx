@@ -1136,7 +1136,7 @@ function AdvisorApp() {
       {confirmDelete&&selected&&<ConfirmModal title={selected.title} onConfirm={deleteObject} onCancel={()=>setConfirmDelete(false)} />}
       <div style={{ borderBottom:`1px solid ${C.border}`, padding:"14px 16px", boxSizing:"border-box", width:"100%" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:11 }}>
-          <div><div style={{ fontSize:17, letterSpacing:"0.14em", color:C.gold }}>PROVENANCE</div><div style={{ fontSize:9, letterSpacing:"0.2em", color:C.dim, textTransform:"uppercase", marginTop:2 }}>Collection · Value · Intelligence</div></div>
+          <div><div style={{ fontSize:17, letterSpacing:"0.14em", color:C.gold }}>PROVENANCE</div><div style={{ fontSize:8, letterSpacing:"0.14em", color:C.dim, textTransform:"uppercase", marginTop:2, whiteSpace:"nowrap" }}>Collection · Value · Intelligence</div></div>
           <button style={mkBtn("ghost", { fontSize:9, padding:"5px 10px", marginTop:2 })} onClick={() => supabase.auth.signOut()}>Sign out</button>
         </div>
         <div style={{ display:"flex", gap:5, overflowX:"auto", paddingBottom:1, WebkitOverflowScrolling:"touch" }}>
