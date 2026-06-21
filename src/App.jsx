@@ -601,9 +601,7 @@ function LoginScreen() {
           <div style={{ fontSize:16, letterSpacing:"0.16em", color:C.gold }}>PROVENANCE</div>
           <div style={{ fontSize:8, letterSpacing:"0.14em", color:C.dim, textTransform:"uppercase", marginTop:2, whiteSpace:"nowrap" }}>Collection · Value · Intelligence</div>
         </div>
-        <button style={mkBtn("primary", { fontSize:10, padding:"7px 16px", opacity: loading ? 0.6 : 1 })} onClick={handleLogin} disabled={loading}>
-          {loading ? "…" : "Sign In"}
-        </button>
+
       </div>
 
       <div style={{ padding:"48px 20px 32px", maxWidth:600, margin:"0 auto", textAlign:"center" }}>
