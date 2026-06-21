@@ -28,6 +28,7 @@ const ALLOWED_EMAILS = [
   "thomasgrayling@gmail.com",
   "marciejgreene@gmail.com",
   "jason@canonvaults.com",
+  "thomas@canonvaults.com",
 ];
 
 const db = {
