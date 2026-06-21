@@ -641,7 +641,16 @@ function ClientPortfolioView({ client, objects, onBack, onSelectObject }) {
   const [copied, setCopied] = useState(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
   const copyLink = () => { navigator.clipboard.writeText(shareUrl); setCopied(true); setTimeout(()=>setCopied(false), 2000); };
-  const downloadPdf = async () => { setGeneratingPdf(true); try { await generatePDF(client, clientObjs, null); } catch(e) { console.error(e); } setGeneratingPdf(false); };
+  const downloadPdf = async () => { 
+    setGeneratingPdf(true); 
+    try { 
+      await generatePDF(client, clientObjs, null); 
+    } catch(e) { 
+      console.error("PDF error:", e);
+      alert("PDF error: " + e.message); 
+    } 
+    setGeneratingPdf(false); 
+  };
   return (
     <div>
       <div style={{ marginBottom:16 }}>
