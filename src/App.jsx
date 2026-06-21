@@ -627,6 +627,8 @@ function ClientPortfolioView({ client, objects, onBack, onSelectObject }) {
   }, [clientObjs]);
   const [copied, setCopied] = useState(false);
   const [generatingPdf, setGeneratingPdf] = useState(false);
+  const [notes, setNotes] = useState(client.notes || "");
+  const [notesSaved, setNotesSaved] = useState(false);
   const copyLink = () => { navigator.clipboard.writeText(shareUrl); setCopied(true); setTimeout(()=>setCopied(false), 2000); };
   const downloadPdf = async () => { 
     setGeneratingPdf(true); 
@@ -637,6 +639,11 @@ function ClientPortfolioView({ client, objects, onBack, onSelectObject }) {
       alert("PDF error: " + e.message); 
     } 
     setGeneratingPdf(false); 
+  };
+  const saveNotes = async () => {
+    await db.patch("clients", client.id, { notes });
+    setNotesSaved(true);
+    setTimeout(() => setNotesSaved(false), 2000);
   };
   return (
     <div>
@@ -664,6 +671,19 @@ function ClientPortfolioView({ client, objects, onBack, onSelectObject }) {
           <ResponsiveContainer width="100%" height={190}><LineChart data={portfolioChart} margin={{ top:4, right:4, left:0, bottom:0 }}><CartesianGrid strokeDasharray="3 3" stroke={C.active} /><XAxis dataKey="date" tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={{ stroke:C.border }} /><YAxis tickFormatter={fmtShort} tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={false} width={44} /><Tooltip content={<ChartTip />} /><Line type="monotone" dataKey="total" stroke={C.gold} strokeWidth={2} dot={{ fill:C.gold, r:3 }} activeDot={{ r:5 }} name="Total Value" /></LineChart></ResponsiveContainer>
         </div>
       )}
+      <div style={CARD}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+          <div style={{ fontSize:9, letterSpacing:"0.18em", textTransform:"uppercase", color:C.dim }}>Advisor Notes</div>
+          <button style={mkBtn("secondary", { fontSize:9, padding:"3px 10px" })} onClick={saveNotes}>{notesSaved ? "Saved!" : "Save"}</button>
+        </div>
+        <textarea
+          style={mkInput({ height:80, resize:"vertical", display:"block", fontSize:12, lineHeight:1.6 })}
+          placeholder="Private notes about this client and their collection…"
+          value={notes}
+          onChange={e => setNotes(e.target.value)}
+        />
+      </div>
+
       {clientObjs.length === 0 && <div style={{ textAlign:"center", padding:"30px 0", color:C.dim, fontSize:13 }}>No objects yet. Add objects and assign them to {client.name}.</div>}
       {clientObjs.length > 0 && <>
         <div style={SEC}>Collection</div>
