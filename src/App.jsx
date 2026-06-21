@@ -599,7 +599,7 @@ function LoginScreen() {
       <div style={{ borderBottom:`1px solid ${C.border}`, padding:"14px 20px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
         <div>
           <div style={{ fontSize:16, letterSpacing:"0.16em", color:C.gold }}>PROVENANCE</div>
-          <div style={{ fontSize:8, letterSpacing:"0.2em", color:C.dim, textTransform:"uppercase", marginTop:2 }}>Collection · Value · Intelligence</div>
+          <div style={{ fontSize:8, letterSpacing:"0.14em", color:C.dim, textTransform:"uppercase", marginTop:2, whiteSpace:"nowrap" }}>Collection · Value · Intelligence</div>
         </div>
         <button style={mkBtn("primary", { fontSize:10, padding:"7px 16px", opacity: loading ? 0.6 : 1 })} onClick={handleLogin} disabled={loading}>
           {loading ? "…" : "Sign In"}
@@ -609,7 +609,7 @@ function LoginScreen() {
       <div style={{ padding:"48px 20px 32px", maxWidth:600, margin:"0 auto", textAlign:"center" }}>
         <div style={{ fontSize:11, letterSpacing:"0.2em", textTransform:"uppercase", color:C.gold, marginBottom:16 }}>For Art & Collectible Advisors</div>
         <h1 style={{ fontSize:32, fontWeight:"normal", lineHeight:1.2, margin:"0 0 10px", color:C.text }}>Know what your clients' collections are worth</h1>
-        <div style={{ fontSize:14, letterSpacing:"0.18em", textTransform:"uppercase", color:C.gold, marginBottom:16 }}>Collection · Value · Intelligence</div>
+        <div style={{ fontSize:12, letterSpacing:"0.14em", textTransform:"uppercase", color:C.gold, marginBottom:16, whiteSpace:"nowrap" }}>Collection · Value · Intelligence</div>
         <p style={{ fontSize:14, color:C.muted, lineHeight:1.8, margin:"0 0 32px" }}>
           Provenance gives art advisors a private portfolio dashboard for every client — with value tracking, market data, and shareable collection reports.
         </p>
