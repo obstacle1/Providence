@@ -109,6 +109,177 @@ function calcPortStats(objects) {
   return { cur, acq, gain, gainPct:acq?((gain/acq)*100).toFixed(1):"0.0" };
 }
 
+// ── PDF Report Generator ─────────────────────────────────────────────────────
+async function generatePDF(client, objects, advisorEmail) {
+  // Dynamically load jsPDF
+  if (!window.jspdf) {
+    await new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+      script.onload = resolve;
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+  }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const W = 210, M = 18, CW = W - M * 2;
+  const gold = [153, 15, 61]; // claret
+  const dark = [51, 48, 46];
+  const muted = [102, 96, 92];
+  const light = [204, 193, 183];
+
+  // Header bar
+  doc.setFillColor(153, 15, 61);
+  doc.rect(0, 0, W, 22, 'F');
+
+  // Logo text
+  doc.setTextColor(255, 241, 229);
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.text('PROVENANCE', M, 14);
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.text('COLLECTION · VALUE · INTELLIGENCE', M, 19);
+
+  // Date top right
+  doc.setFontSize(7);
+  doc.setTextColor(255, 241, 229);
+  doc.text(new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' }), W - M, 14, { align: 'right' });
+
+  let y = 34;
+
+  // Client name
+  doc.setTextColor(...dark);
+  doc.setFontSize(22);
+  doc.setFont('helvetica', 'bold');
+  doc.text(client.name, M, y);
+  y += 6;
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...muted);
+  doc.text('Private Collection Report', M, y);
+  y += 10;
+
+  // Divider
+  doc.setDrawColor(...light);
+  doc.setLineWidth(0.3);
+  doc.line(M, y, W - M, y);
+  y += 8;
+
+  // Stats row
+  const stats = calcPortStats(objects);
+  const statItems = [
+    { label: 'Total Value', value: new Intl.NumberFormat('en-US', { style:'currency', currency:'USD', maximumFractionDigits:0 }).format(stats.cur) },
+    { label: 'Total Gain', value: new Intl.NumberFormat('en-US', { style:'currency', currency:'USD', maximumFractionDigits:0 }).format(stats.gain) },
+    { label: 'Gain %', value: `${stats.gain >= 0 ? '+' : ''}${stats.gainPct}%` },
+    { label: 'Acquisition Cost', value: new Intl.NumberFormat('en-US', { style:'currency', currency:'USD', maximumFractionDigits:0 }).format(stats.acq) },
+  ];
+
+  const sw = CW / 4;
+  statItems.forEach((s, i) => {
+    const x = M + i * sw;
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(...muted);
+    doc.text(s.label.toUpperCase(), x, y);
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(i === 1 || i === 2 ? (stats.gain >= 0 ? [10, 115, 64] : [204, 0, 0]) : [...dark]);
+    doc.text(s.value, x, y + 6);
+  });
+  y += 18;
+
+  // Divider
+  doc.setDrawColor(...light);
+  doc.line(M, y, W - M, y);
+  y += 8;
+
+  // Objects table header
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(...muted);
+  doc.text('OBJECT', M, y);
+  doc.text('ACQUIRED', M + 80, y);
+  doc.text('CURRENT VALUE', M + 110, y);
+  doc.text('CHANGE', M + 148, y);
+  doc.text('GAIN %', M + 168, y);
+  y += 4;
+
+  doc.setDrawColor(...light);
+  doc.line(M, y, W - M, y);
+  y += 5;
+
+  // Objects
+  const fmt = (n) => new Intl.NumberFormat('en-US', { style:'currency', currency:'USD', maximumFractionDigits:0 }).format(n);
+
+  objects.forEach((obj, idx) => {
+    if (y > 260) { doc.addPage(); y = 20; }
+
+    const s = [...obj.valuations].sort((a,b)=>a.date.localeCompare(b.date));
+    const first = s[0], last = s[s.length - 1];
+    const cur = last?.value || 0;
+    const acq = first?.value || 0;
+    const change = cur - acq;
+    const changePct = acq ? (((cur - acq) / acq) * 100).toFixed(1) : '—';
+
+    if (idx % 2 === 0) {
+      doc.setFillColor(250, 243, 236);
+      doc.rect(M - 2, y - 4, CW + 4, 14, 'F');
+    }
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...dark);
+    doc.text(obj.title.length > 28 ? obj.title.slice(0, 27) + '…' : obj.title, M, y);
+
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(...muted);
+    doc.text(`${obj.artist}${obj.year ? ' · ' + obj.year : ''}`, M, y + 4);
+
+    doc.setFontSize(8);
+    doc.setTextColor(...muted);
+    doc.text(acq ? fmt(acq) : '—', M + 80, y);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...dark);
+    doc.text(cur ? fmt(cur) : '—', M + 110, y);
+
+    const changeColor = change >= 0 ? [10, 115, 64] : [204, 0, 0];
+    doc.setTextColor(...changeColor);
+    doc.setFont('helvetica', 'normal');
+    doc.text(change ? `${change >= 0 ? '+' : ''}${fmt(change)}` : '—', M + 148, y);
+    doc.text(changePct !== '—' ? `${changePct}%` : '—', M + 168, y);
+
+    y += 14;
+  });
+
+  y += 4;
+  doc.setDrawColor(...light);
+  doc.line(M, y, W - M, y);
+  y += 8;
+
+  // Footer
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...muted);
+  doc.text('Prepared by Provenance · Collection Value Intelligence', M, y);
+  doc.text('Values shown are estimates for reference purposes only and do not constitute a formal appraisal.', M, y + 4);
+  if (advisorEmail) doc.text(`Advisor: ${advisorEmail}`, M, y + 8);
+
+  // Bottom bar
+  doc.setFillColor(153, 15, 61);
+  doc.rect(0, 285, W, 12, 'F');
+  doc.setTextColor(255, 241, 229);
+  doc.setFontSize(7);
+  doc.text('PROVENANCE · COLLECTION VALUE INTELLIGENCE', W / 2, 292, { align: 'center' });
+
+  doc.save(`${client.name.replace(/\s+/g, '-')}-Collection-Report.pdf`);
+}
+
 // ── Public Client View (no auth required) ─────────────────────────────────────
 function PublicClientView() {
   const { slug } = useParams();
@@ -465,7 +636,9 @@ function ClientPortfolioView({ client, objects, onBack, onSelectObject }) {
     return dates.map(date => { let total=0; clientObjs.forEach(obj=>{ const s=[...obj.valuations].sort((a,b)=>a.date.localeCompare(b.date)); const before=s.filter(v=>v.date<=date); if(before.length) total+=before[before.length-1].value; }); return { date:fmtAxis(date), total }; });
   }, [clientObjs]);
   const [copied, setCopied] = useState(false);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
   const copyLink = () => { navigator.clipboard.writeText(shareUrl); setCopied(true); setTimeout(()=>setCopied(false), 2000); };
+  const downloadPdf = async () => { setGeneratingPdf(true); try { await generatePDF(client, clientObjs, null); } catch(e) { console.error(e); } setGeneratingPdf(false); };
   return (
     <div>
       <div style={{ marginBottom:16 }}>
@@ -476,6 +649,9 @@ function ClientPortfolioView({ client, objects, onBack, onSelectObject }) {
           <div style={{ fontSize:11, color:C.dim, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{shareUrl}</div>
           <button style={mkBtn("secondary",{ fontSize:9, padding:"4px 10px" })} onClick={copyLink}>{copied?"Copied!":"Copy Link"}</button>
         </div>
+        <button style={mkBtn("primary", { fontSize:10, padding:"8px 14px", marginTop:10, width:"100%" })} onClick={downloadPdf} disabled={generatingPdf}>
+          {generatingPdf ? "Generating…" : "⬇ Download PDF Report"}
+        </button>
       </div>
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
         <StatCard lbl="Total Value" val={fmt(stats.cur)} />
