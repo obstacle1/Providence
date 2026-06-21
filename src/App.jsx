@@ -344,10 +344,8 @@ function PublicClientView() {
           {/* Client header */}
           <div style={{ marginBottom:20 }}>
             <div style={{ fontSize:24, marginBottom:4 }}>{client.name}</div>
-            <div style={{ fontSize:11, color:C.dim, letterSpacing:"0.08em" }}>
-              Private Collection · {new Date().getFullYear()}
-              {(() => { const allDates = objects.flatMap(o=>o.valuations.map(v=>v.date)).sort(); const last = allDates[allDates.length-1]; return last ? <span style={{ marginLeft:8, color:C.dim }}>· Updated {new Date(last).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</span> : null; })()}
-            </div>
+            <div style={{ fontSize:11, color:C.dim, letterSpacing:"0.08em" }}>Private Collection · {new Date().getFullYear()}</div>
+            {(() => { const allDates = objects.flatMap(o=>o.valuations.map(v=>v.date)).sort(); const last = allDates[allDates.length-1]; return last ? <div style={{ fontSize:10, color:C.dim, marginTop:2 }}>Last updated {new Date(last).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</div> : null; })()}
           </div>
 
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
@@ -356,6 +354,11 @@ function PublicClientView() {
             <StatCard lbl="Objects" val={objects.length} />
             <StatCard lbl="Acquisition Cost" val={fmt(stats.acq)} />
           </div>
+
+          <button
+            style={mkBtn("primary", { fontSize:10, padding:"10px 14px", width:"100%", marginBottom:14 })}
+            onClick={async () => { try { await generatePDF(client, objects, null); } catch(e) { alert("PDF error: " + e.message); } }}
+          >⬇ Download PDF Report</button>
 
           {portfolioChart.length > 0 && (
             <div style={CARD}>
