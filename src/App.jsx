@@ -277,7 +277,10 @@ async function generatePDF(client, objects, advisorEmail) {
   doc.setFontSize(7);
   doc.text('PROVENANCE · COLLECTION VALUE INTELLIGENCE', W / 2, 292, { align: 'center' });
 
-  doc.save(`${client.name.replace(/\s+/g, '-')}-Collection-Report.pdf`);
+  // On mobile, open in new tab instead of download
+  const pdfBlob = doc.output('blob');
+  const url = URL.createObjectURL(pdfBlob);
+  window.open(url, '_blank');
 }
 
 // ── Public Client View (no auth required) ─────────────────────────────────────
