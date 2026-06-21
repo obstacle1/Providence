@@ -916,10 +916,10 @@ function AdvisorApp() {
             {(selected.enjoyment_index||selected.condition_rating||selected.rarity_index) && (
               <div style={CARD}>
                 <div style={SEC}>Object Ratings</div>
-                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10 }}>
-                  <div><div style={LBL}>Enjoyment</div><StarRating value={selected.enjoyment_index} readonly /></div>
-                  <div><div style={LBL}>Condition</div><StarRating value={selected.condition_rating} readonly /></div>
-                  <div><div style={LBL}>Rarity</div><StarRating value={selected.rarity_index} readonly /></div>
+                <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}><span style={LBL}>Enjoyment Index</span><StarRating value={selected.enjoyment_index} readonly /></div>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}><span style={LBL}>Condition Rating</span><StarRating value={selected.condition_rating} readonly /></div>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}><span style={LBL}>Rarity Index</span><StarRating value={selected.rarity_index} readonly /></div>
                 </div>
               </div>
             )}
