@@ -1257,38 +1257,32 @@ function AdvisorApp() {
         </div>}
 
         {view==="team"&&<div>
-          <div style={{ fontSize:17, marginBottom:18 }}>Team</div>
+          <div style={{ fontSize:17, marginBottom:4 }}>Team</div>
+          <div style={{ fontSize:11, color:C.dim, marginBottom:16 }}>Signed in as {session.user.email}</div>
           <div style={CARD}>
-            <div style={SEC}>Invite Member</div>
-            <div style={{ display:"flex", gap:8, marginBottom:16 }}>
+            <div style={SEC}>Invite Someone</div>
+            <div style={{ display:"flex", gap:8, marginBottom:10 }}>
               <input style={mkInput({ flex:1 })} type="email" placeholder="colleague@email.com" value={inviteEmail} onChange={e=>setInviteEmail(e.target.value)} />
               <button style={mkBtn("primary", { opacity:inviting?0.6:1, whiteSpace:"nowrap" })} onClick={inviteMember} disabled={inviting}>{inviting?"Inviting…":"Invite"}</button>
             </div>
             <div style={{ fontSize:11, color:C.dim, lineHeight:1.6 }}>
-              Invited members can sign in with their Google account and access your full workspace.
+              They'll be able to sign in with Google and access your full workspace.
             </div>
           </div>
-          {teamMembers.length > 0 && (
-            <div style={CARD}>
-              <div style={SEC}>Current Members</div>
-              {teamMembers.map((email, i) => (
-                <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 0", borderBottom:`1px solid ${C.border}` }}>
-                  <div style={{ fontSize:13, color:C.text }}>{email}</div>
-                  <button style={mkBtn("danger", { fontSize:9, padding:"3px 10px" })} onClick={()=>removeMember(email)}>Remove</button>
-                </div>
-              ))}
+          <div style={CARD}>
+            <div style={SEC}>Team Members</div>
+            <div style={{ display:"flex", justifyContent:"space-between", padding:"10px 0", borderBottom:`1px solid ${C.border}` }}>
+              <div style={{ fontSize:13, color:C.gold }}>{session.user.email}</div>
+              <div style={{ fontSize:11, color:C.dim, alignSelf:"center" }}>Owner</div>
             </div>
-          )}
-          {teamMembers.length === 0 && (
-            <div style={{ textAlign:"center", padding:"30px 0", color:C.dim, fontSize:13 }}>No team members yet. Invite someone above.</div>
-          )}
-          <div style={{ fontSize:11, color:C.dim, lineHeight:1.6, marginTop:8 }}>
-            <span style={{ color:C.text }}>Your account:</span> {session.user.email}
+            {teamMembers.length === 0 && <div style={{ fontSize:12, color:C.dim, padding:"12px 0" }}>No team members yet.</div>}
+            {teamMembers.map((email, i) => (
+              <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 0", borderBottom:`1px solid ${C.border}` }}>
+                <div style={{ fontSize:13, color:C.text }}>{email}</div>
+                <button style={mkBtn("danger", { fontSize:9, padding:"3px 10px" })} onClick={()=>removeMember(email)}>Remove</button>
+              </div>
+            ))}
           </div>
-
-          {session.user.email?.toLowerCase() === OWNER_EMAIL && (
-            <AllowedEmailsManager />
-          )}
         </div>}
 
         {view==="import"&&<div>
