@@ -695,7 +695,7 @@ function LoginScreen() {
   );
 }
 
-function ClientsView({ clients, objects, onSelectClient, session, onClientAdded }) {
+function ClientsView({ clients, objects, onSelectClient, session, onClientAdded, onDeleteClient }) {
   const [showAdd, setShowAdd] = useState(false);
   const [newClient, setNewClient] = useState({ name:"", email:"" });
   const [saving, setSaving] = useState(false);
@@ -727,14 +727,19 @@ function ClientsView({ clients, objects, onSelectClient, session, onClientAdded 
         const clientObjs = objects.filter(o => o.client_id === client.id);
         const stats = calcPortStats(clientObjs);
         return (
-          <div key={client.id} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px", cursor:"pointer", borderRadius:2, marginBottom:6, background:C.card, border:`1px solid ${C.border}`, boxSizing:"border-box" }} onClick={() => onSelectClient(client)}>
-            <div style={{ flex:1, minWidth:0, paddingRight:10 }}>
-              <div style={{ fontSize:15 }}>{client.name}</div>
-              <div style={{ fontSize:11, color:C.dim, marginTop:2 }}>{clientObjs.length} object{clientObjs.length!==1?"s":""}{client.email ? ` · ${client.email}` : ""}</div>
+          <div key={client.id} style={{ borderRadius:2, marginBottom:6, background:C.card, border:`1px solid ${C.border}`, boxSizing:"border-box", overflow:"hidden" }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"14px", cursor:"pointer" }} onClick={() => onSelectClient(client)}>
+              <div style={{ flex:1, minWidth:0, paddingRight:10 }}>
+                <div style={{ fontSize:15 }}>{client.name}</div>
+                <div style={{ fontSize:11, color:C.dim, marginTop:2 }}>{clientObjs.length} object{clientObjs.length!==1?"s":""}{client.email ? ` · ${client.email}` : ""}</div>
+              </div>
+              <div style={{ textAlign:"right", flexShrink:0 }}>
+                <div style={{ fontSize:14, color:C.gold }}>{fmt(stats.cur)}</div>
+                {stats.cur > 0 && <div style={{ fontSize:11, color:stats.gain>=0?C.green:C.red, marginTop:1 }}>{stats.gain>=0?"▲":"▼"} {Math.abs(stats.gainPct)}%</div>}
+              </div>
             </div>
-            <div style={{ textAlign:"right", flexShrink:0 }}>
-              <div style={{ fontSize:14, color:C.gold }}>{fmt(stats.cur)}</div>
-              {stats.cur > 0 && <div style={{ fontSize:11, color:stats.gain>=0?C.green:C.red, marginTop:1 }}>{stats.gain>=0?"▲":"▼"} {Math.abs(stats.gainPct)}%</div>}
+            <div style={{ borderTop:`1px solid ${C.border}`, padding:"6px 14px", display:"flex", justifyContent:"flex-end", background:C.inner }}>
+              <button style={mkBtn("danger", { fontSize:9, padding:"3px 10px" })} onClick={e=>{ e.stopPropagation(); if(window.confirm(`Delete ${client.name}?`)) onDeleteClient(client.id); }}>Delete Client</button>
             </div>
           </div>
         );
@@ -854,6 +859,7 @@ function AdvisorApp() {
   const [editMode,      setEditMode]      = useState(false);
   const [editObj,       setEditObj]       = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [search, setSearch] = useState("");
 
   const notify = (msg) => { setToast(msg); setTimeout(()=>setToast(null), 2800); };
   const selected = objects.find((o)=>o.id===selectedId);
@@ -943,6 +949,13 @@ function AdvisorApp() {
     setEditMode(false); setEditObj(null); notify("Object updated");
   };
 
+  const deleteClient = async (clientId) => {
+    await db.delete("clients", clientId);
+    setClients(p => p.filter(c => c.id !== clientId));
+    setSelectedClient(null);
+    notify("Client deleted");
+  };
+
   const deleteObject = async () => {
     await db.delete("objects", selectedId);
     setObjects((p)=>p.filter((o)=>o.id!==selectedId));
@@ -1014,10 +1027,19 @@ function AdvisorApp() {
           </div>
           {portfolioChart.length>0&&<div style={CARD}><div style={SEC}>Portfolio Value Over Time</div><ResponsiveContainer width="100%" height={190}><LineChart data={portfolioChart} margin={{ top:4, right:4, left:0, bottom:0 }}><CartesianGrid strokeDasharray="3 3" stroke={C.active} /><XAxis dataKey="date" tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={{ stroke:C.border }} /><YAxis tickFormatter={fmtShort} tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={false} width={44} /><Tooltip content={<ChartTip />} /><Line type="monotone" dataKey="total" stroke={C.gold} strokeWidth={2} dot={{ fill:C.gold, r:3 }} activeDot={{ r:5 }} name="Total Value" /></LineChart></ResponsiveContainer></div>}
           {portfolioObjects.length===0&&<div style={{ textAlign:"center", padding:"40px 0", color:C.dim, fontSize:13 }}>No objects yet. Tap <span style={{ color:C.gold }}>+ Add</span> to get started.</div>}
-          {portfolioObjects.length>0&&<><div style={SEC}>All Objects</div>{portfolioObjects.map((obj)=>{ const s=[...obj.valuations].sort((a,b)=>a.date.localeCompare(b.date)), cur=s[s.length-1]?.value||0, fst=s[0]?.value||0, g=fst?pct(fst,cur):null; return (<div key={obj.id} style={{ borderRadius:2, marginBottom:4, background:C.card, border:`1px solid ${C.border}`, boxSizing:"border-box", overflow:"hidden" }}><div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px", cursor:"pointer" }} onClick={()=>{ setSelectedId(obj.id); setView("object"); }}><div style={{ flex:1, minWidth:0, paddingRight:10 }}><div style={{ fontSize:14, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{obj.title}</div><div style={{ fontSize:11, color:C.dim, marginTop:2 }}>{obj.artist} · {obj.year}</div></div><div style={{ textAlign:"right", flexShrink:0 }}><div style={{ fontSize:14, color:C.gold }}>{fmt(cur)}</div>{g!==null&&<div style={{ fontSize:11, color:cur>=fst?C.green:C.red, marginTop:1 }}>{cur>=fst?"▲":"▼"} {Math.abs(g)}%</div>}</div></div>{obj.client_id&&<div style={{ borderTop:`1px solid ${C.border}`, padding:"4px 12px", background:C.inner }}><span style={{ fontSize:10, color:C.dim }}>{clients.find(c=>c.id===obj.client_id)?.name}</span></div>}</div>); })}</>}
+          {portfolioObjects.length>0&&<>
+          <div style={{ marginBottom:12 }}>
+            <input
+              style={mkInput({ fontSize:13, padding:"9px 12px" })}
+              placeholder="Search objects, makers…"
+              value={search}
+              onChange={e=>setSearch(e.target.value)}
+            />
+          </div>
+          <div style={SEC}>All Objects</div>{portfolioObjects.filter(obj => !search || obj.title.toLowerCase().includes(search.toLowerCase()) || obj.artist.toLowerCase().includes(search.toLowerCase())).map((obj)=>{ const s=[...obj.valuations].sort((a,b)=>a.date.localeCompare(b.date)), cur=s[s.length-1]?.value||0, fst=s[0]?.value||0, g=fst?pct(fst,cur):null; return (<div key={obj.id} style={{ borderRadius:2, marginBottom:4, background:C.card, border:`1px solid ${C.border}`, boxSizing:"border-box", overflow:"hidden" }}><div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px", cursor:"pointer" }} onClick={()=>{ setSelectedId(obj.id); setView("object"); }}><div style={{ flex:1, minWidth:0, paddingRight:10 }}><div style={{ fontSize:14, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{obj.title}</div><div style={{ fontSize:11, color:C.dim, marginTop:2 }}>{obj.artist} · {obj.year}</div></div><div style={{ textAlign:"right", flexShrink:0 }}><div style={{ fontSize:14, color:C.gold }}>{fmt(cur)}</div>{g!==null&&<div style={{ fontSize:11, color:cur>=fst?C.green:C.red, marginTop:1 }}>{cur>=fst?"▲":"▼"} {Math.abs(g)}%</div>}</div></div>{obj.client_id&&<div style={{ borderTop:`1px solid ${C.border}`, padding:"4px 12px", background:C.inner }}><span style={{ fontSize:10, color:C.dim }}>{clients.find(c=>c.id===obj.client_id)?.name}</span></div>}</div>); })}</>}
         </>)}
 
-        {view==="clients"&&!selectedClient&&<ClientsView clients={clients} objects={objects} session={session} onSelectClient={c=>setSelectedClient(c)} onClientAdded={c=>setClients(p=>[...p,c])} />}
+        {view==="clients"&&!selectedClient&&<ClientsView clients={clients} objects={objects} session={session} onSelectClient={c=>setSelectedClient(c)} onClientAdded={c=>setClients(p=>[...p,c])} onDeleteClient={deleteClient} />}
         {view==="clients"&&selectedClient&&<ClientPortfolioView client={selectedClient} objects={objects} onBack={()=>setSelectedClient(null)} onSelectObject={obj=>{ setSelectedId(obj.id); setView("object"); }} />}
 
         {view==="object"&&selected&&(<>
@@ -1028,7 +1050,7 @@ function AdvisorApp() {
                 <div style={{ display:"flex", flexDirection:"column", gap:11, marginBottom:13 }}>
                   <div><label style={LBL}>Title</label><input style={mkInput()} value={editObj.title} onChange={(e)=>setEditObj({...editObj,title:e.target.value})} /></div>
                   <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:11 }}>
-                    <div><label style={LBL}>Artist</label><input style={mkInput()} value={editObj.artist} onChange={(e)=>setEditObj({...editObj,artist:e.target.value})} /></div>
+                    <div><label style={LBL}>Maker</label><input style={mkInput()} value={editObj.artist} onChange={(e)=>setEditObj({...editObj,artist:e.target.value})} /></div>
                     <div><label style={LBL}>Year</label><input style={mkInput()} type="number" value={editObj.year} onChange={(e)=>setEditObj({...editObj,year:e.target.value})} /></div>
                   </div>
                   <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:11 }}>
@@ -1108,7 +1130,7 @@ function AdvisorApp() {
           <div style={CARD}>
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:11, marginBottom:13 }}>
               <div style={{ gridColumn:"1/-1" }}><label style={LBL}>Title</label><input style={mkInput()} value={newObj.title} onChange={(e)=>setNewObj({...newObj,title:e.target.value})} placeholder="Object title" /></div>
-              <div><label style={LBL}>Artist / Maker</label><input style={mkInput()} value={newObj.artist} onChange={(e)=>setNewObj({...newObj,artist:e.target.value})} placeholder="Name" /></div>
+              <div><label style={LBL}>Maker</label><input style={mkInput()} value={newObj.artist} onChange={(e)=>setNewObj({...newObj,artist:e.target.value})} placeholder="e.g. Rolex, Picasso" /></div>
               <div><label style={LBL}>Year</label><input style={mkInput()} type="number" value={newObj.year} onChange={(e)=>setNewObj({...newObj,year:e.target.value})} placeholder="e.g. 1952" /></div>
               <div><label style={LBL}>Medium</label><input style={mkInput()} value={newObj.medium} onChange={(e)=>setNewObj({...newObj,medium:e.target.value})} placeholder="e.g. Oil on canvas" /></div>
               <div><label style={LBL}>Category</label><select style={mkInput()} value={newObj.category} onChange={(e)=>setNewObj({...newObj,category:e.target.value})}>{["Painting","Sculpture","Works on Paper","Photography","Decorative Arts","Jewellery","Furniture","Other"].map((c)=><option key={c}>{c}</option>)}</select></div>
