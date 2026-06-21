@@ -175,7 +175,7 @@ function PublicClientView() {
       {/* Header */}
       <div style={{ borderBottom:`1px solid ${C.border}`, padding:"14px 16px" }}>
         <div style={{ fontSize:14, letterSpacing:"0.16em", color:C.gold, marginBottom:2 }}>PROVENANCE</div>
-        <div style={{ fontSize:9, letterSpacing:"0.2em", color:C.dim, textTransform:"uppercase" }}>Collection Value Intelligence</div>
+        <div style={{ fontSize:9, letterSpacing:"0.2em", color:C.dim, textTransform:"uppercase" }}>Collection · Value · Intelligence</div>
       </div>
 
       <div style={{ padding:"18px 16px", maxWidth:860, margin:"0 auto" }}>
@@ -230,7 +230,7 @@ function PublicClientView() {
           </>}
 
           <div style={{ marginTop:24, paddingTop:16, borderTop:`1px solid ${C.border}`, fontSize:10, color:C.dim, textAlign:"center", lineHeight:1.6 }}>
-            Prepared by Provenance · Collection Value Intelligence<br/>
+            Prepared by Provenance · Collection · Value · Intelligence<br/>
             Values shown are estimates for reference only.
           </div>
         </>) : (
@@ -352,7 +352,7 @@ function LoginScreen() {
     <div style={{ background:C.bg, minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"Georgia, serif", padding:20 }}>
       <div style={{ textAlign:"center", maxWidth:280 }}>
         <div style={{ color:C.gold, fontSize:24, letterSpacing:"0.18em", marginBottom:6 }}>PROVENANCE</div>
-        <div style={{ color:C.dim, fontSize:11, letterSpacing:"0.16em", textTransform:"uppercase", marginBottom:40 }}>Collection Value Intelligence</div>
+        <div style={{ color:C.dim, fontSize:11, letterSpacing:"0.16em", textTransform:"uppercase", marginBottom:40 }}>Collection · Value · Intelligence</div>
         <button style={mkBtn("primary", { fontSize:12, padding:"12px 28px", letterSpacing:"0.12em", opacity: loading ? 0.6 : 1 })} onClick={handleLogin} disabled={loading}>
           {loading ? "Redirecting…" : "Sign in with Google"}
         </button>
@@ -575,7 +575,7 @@ function AdvisorApp() {
       {confirmDelete&&selected&&<ConfirmModal title={selected.title} onConfirm={deleteObject} onCancel={()=>setConfirmDelete(false)} />}
       <div style={{ borderBottom:`1px solid ${C.border}`, padding:"14px 16px", boxSizing:"border-box", width:"100%" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:11 }}>
-          <div><div style={{ fontSize:17, letterSpacing:"0.14em", color:C.gold }}>PROVENANCE</div><div style={{ fontSize:9, letterSpacing:"0.2em", color:C.dim, textTransform:"uppercase", marginTop:2 }}>Collection Value Intelligence</div></div>
+          <div><div style={{ fontSize:17, letterSpacing:"0.14em", color:C.gold }}>PROVENANCE</div><div style={{ fontSize:9, letterSpacing:"0.2em", color:C.dim, textTransform:"uppercase", marginTop:2 }}>Collection · Value · Intelligence</div></div>
           <button style={mkBtn("ghost", { fontSize:9, padding:"5px 10px", marginTop:2 })} onClick={() => supabase.auth.signOut()}>Sign out</button>
         </div>
         <div style={{ display:"flex", gap:5, overflowX:"auto", paddingBottom:1, WebkitOverflowScrolling:"touch" }}>
