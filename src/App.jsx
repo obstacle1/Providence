@@ -801,6 +801,25 @@ function AdvisorApp() {
     const created = rows[0]; if (!created) return;
     setObjects((p)=>p.map((o)=>o.id===selectedId?{ ...o, valuations:[...o.valuations, { date:created.date, value:+created.value, note:created.note||"", _id:created.id }] }:o));
     setNewVal({ date:"", value:"", note:"" }); setShowAddVal(false); notify("Valuation saved");
+    // Send email notification if object belongs to a client with an email
+    if (selected?.client_id) {
+      const client = clients.find(c => c.id === selected.client_id);
+      if (client?.email) {
+        try {
+          await fetch("/api/notify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              clientName: client.name,
+              clientEmail: client.email,
+              clientSlug: client.slug,
+              objectTitle: selected.title,
+              newValue: +newVal.value,
+            }),
+          });
+        } catch(e) { console.error("Email notification failed:", e); }
+      }
+    }
   };
 
   const deleteValuation = async (valId) => {
