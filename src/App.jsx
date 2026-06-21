@@ -111,7 +111,6 @@ function calcPortStats(objects) {
 
 // ── PDF Report Generator ─────────────────────────────────────────────────────
 async function generatePDF(client, objects, advisorEmail) {
-  // Dynamically load jsPDF
   if (!window.jspdf) {
     await new Promise((resolve, reject) => {
       const script = document.createElement('script');
@@ -125,16 +124,11 @@ async function generatePDF(client, objects, advisorEmail) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const W = 210, M = 18, CW = W - M * 2;
-  const gold = [153, 15, 61]; // claret
-  const dark = [51, 48, 46];
-  const muted = [102, 96, 92];
-  const light = [204, 193, 183];
+  const fmt = (n) => new Intl.NumberFormat('en-US', { style:'currency', currency:'USD', maximumFractionDigits:0 }).format(n);
 
   // Header bar
   doc.setFillColor(153, 15, 61);
   doc.rect(0, 0, W, 22, 'F');
-
-  // Logo text
   doc.setTextColor(255, 241, 229);
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
@@ -142,133 +136,127 @@ async function generatePDF(client, objects, advisorEmail) {
   doc.setFontSize(7);
   doc.setFont('helvetica', 'normal');
   doc.text('COLLECTION · VALUE · INTELLIGENCE', M, 19);
-
-  // Date top right
   doc.setFontSize(7);
-  doc.setTextColor(255, 241, 229);
   doc.text(new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' }), W - M, 14, { align: 'right' });
 
   let y = 34;
 
   // Client name
-  doc.setTextColor(...dark);
+  doc.setTextColor(51, 48, 46);
   doc.setFontSize(22);
   doc.setFont('helvetica', 'bold');
   doc.text(client.name, M, y);
   y += 6;
-
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
-  doc.setTextColor(...muted);
+  doc.setTextColor(102, 96, 92);
   doc.text('Private Collection Report', M, y);
   y += 10;
 
   // Divider
-  doc.setDrawColor(...light);
+  doc.setDrawColor(204, 193, 183);
   doc.setLineWidth(0.3);
   doc.line(M, y, W - M, y);
   y += 8;
 
-  // Stats row
+  // Stats
   const stats = calcPortStats(objects);
   const statItems = [
-    { label: 'Total Value', value: new Intl.NumberFormat('en-US', { style:'currency', currency:'USD', maximumFractionDigits:0 }).format(stats.cur) },
-    { label: 'Total Gain', value: new Intl.NumberFormat('en-US', { style:'currency', currency:'USD', maximumFractionDigits:0 }).format(stats.gain) },
-    { label: 'Gain %', value: `${stats.gain >= 0 ? '+' : ''}${stats.gainPct}%` },
-    { label: 'Acquisition Cost', value: new Intl.NumberFormat('en-US', { style:'currency', currency:'USD', maximumFractionDigits:0 }).format(stats.acq) },
+    { label: 'TOTAL VALUE', value: fmt(stats.cur) },
+    { label: 'TOTAL GAIN', value: fmt(stats.gain), isGain: true },
+    { label: 'GAIN %', value: `${stats.gainPct}%`, isGain: true },
+    { label: 'ACQUISITION COST', value: fmt(stats.acq) },
   ];
-
   const sw = CW / 4;
   statItems.forEach((s, i) => {
     const x = M + i * sw;
     doc.setFontSize(7);
     doc.setFont('helvetica', 'normal');
-    doc.setTextColor(...muted);
-    doc.text(s.label.toUpperCase(), x, y);
-    doc.setFontSize(12);
+    doc.setTextColor(102, 96, 92);
+    doc.text(s.label, x, y);
+    doc.setFontSize(11);
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(i === 1 || i === 2 ? (stats.gain >= 0 ? [10, 115, 64] : [204, 0, 0]) : [...dark]);
+    if (s.isGain) {
+      doc.setTextColor(stats.gain >= 0 ? 10 : 204, stats.gain >= 0 ? 115 : 0, stats.gain >= 0 ? 64 : 0);
+    } else {
+      doc.setTextColor(51, 48, 46);
+    }
     doc.text(s.value, x, y + 6);
   });
   y += 18;
 
   // Divider
-  doc.setDrawColor(...light);
+  doc.setDrawColor(204, 193, 183);
   doc.line(M, y, W - M, y);
   y += 8;
 
-  // Objects table header
+  // Table header
   doc.setFontSize(7);
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...muted);
+  doc.setTextColor(102, 96, 92);
   doc.text('OBJECT', M, y);
-  doc.text('ACQUIRED', M + 80, y);
-  doc.text('CURRENT VALUE', M + 110, y);
-  doc.text('CHANGE', M + 148, y);
-  doc.text('GAIN %', M + 168, y);
+  doc.text('ACQUIRED', M + 85, y);
+  doc.text('CURRENT VALUE', M + 115, y);
+  doc.text('GAIN %', M + 160, y);
   y += 4;
-
-  doc.setDrawColor(...light);
+  doc.setDrawColor(204, 193, 183);
   doc.line(M, y, W - M, y);
   y += 5;
 
-  // Objects
-  const fmt = (n) => new Intl.NumberFormat('en-US', { style:'currency', currency:'USD', maximumFractionDigits:0 }).format(n);
-
+  // Object rows
   objects.forEach((obj, idx) => {
     if (y > 260) { doc.addPage(); y = 20; }
-
     const s = [...obj.valuations].sort((a,b)=>a.date.localeCompare(b.date));
     const first = s[0], last = s[s.length - 1];
     const cur = last?.value || 0;
     const acq = first?.value || 0;
-    const change = cur - acq;
-    const changePct = acq ? (((cur - acq) / acq) * 100).toFixed(1) : '—';
+    const changePct = acq ? (((cur - acq) / acq) * 100).toFixed(1) : null;
 
     if (idx % 2 === 0) {
       doc.setFillColor(250, 243, 236);
-      doc.rect(M - 2, y - 4, CW + 4, 14, 'F');
+      doc.rect(M - 2, y - 4, CW + 4, 13, 'F');
     }
 
     doc.setFontSize(9);
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...dark);
-    doc.text(obj.title.length > 28 ? obj.title.slice(0, 27) + '…' : obj.title, M, y);
-
-    doc.setFontSize(8);
+    doc.setTextColor(51, 48, 46);
+    const title = obj.title.length > 30 ? obj.title.slice(0, 29) + '…' : obj.title;
+    doc.text(title, M, y);
+    doc.setFontSize(7);
     doc.setFont('helvetica', 'normal');
-    doc.setTextColor(...muted);
-    doc.text(`${obj.artist}${obj.year ? ' · ' + obj.year : ''}`, M, y + 4);
+    doc.setTextColor(102, 96, 92);
+    const sub = [obj.artist, obj.year].filter(Boolean).join(' · ');
+    doc.text(sub, M, y + 4);
 
-    doc.setFontSize(8);
-    doc.setTextColor(...muted);
-    doc.text(acq ? fmt(acq) : '—', M + 80, y);
+    doc.setFontSize(9);
+    doc.setTextColor(102, 96, 92);
+    doc.text(acq ? fmt(acq) : '—', M + 85, y);
 
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(...dark);
-    doc.text(cur ? fmt(cur) : '—', M + 110, y);
+    doc.setTextColor(51, 48, 46);
+    doc.text(cur ? fmt(cur) : '—', M + 115, y);
 
-    const changeColor = change >= 0 ? [10, 115, 64] : [204, 0, 0];
-    doc.setTextColor(...changeColor);
-    doc.setFont('helvetica', 'normal');
-    doc.text(change ? `${change >= 0 ? '+' : ''}${fmt(change)}` : '—', M + 148, y);
-    doc.text(changePct !== '—' ? `${changePct}%` : '—', M + 168, y);
+    if (changePct !== null) {
+      const gain = cur >= acq;
+      doc.setTextColor(gain ? 10 : 204, gain ? 115 : 0, gain ? 64 : 0);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`${gain ? '+' : ''}${changePct}%`, M + 160, y);
+    }
 
-    y += 14;
+    y += 13;
   });
 
   y += 4;
-  doc.setDrawColor(...light);
+  doc.setDrawColor(204, 193, 183);
   doc.line(M, y, W - M, y);
   y += 8;
 
-  // Footer
+  // Footer text
   doc.setFontSize(7);
   doc.setFont('helvetica', 'normal');
-  doc.setTextColor(...muted);
+  doc.setTextColor(102, 96, 92);
   doc.text('Prepared by Provenance · Collection Value Intelligence', M, y);
-  doc.text('Values shown are estimates for reference purposes only and do not constitute a formal appraisal.', M, y + 4);
-  if (advisorEmail) doc.text(`Advisor: ${advisorEmail}`, M, y + 8);
+  doc.text('Values shown are estimates for reference only and do not constitute a formal appraisal.', M, y + 5);
 
   // Bottom bar
   doc.setFillColor(153, 15, 61);
@@ -277,7 +265,6 @@ async function generatePDF(client, objects, advisorEmail) {
   doc.setFontSize(7);
   doc.text('PROVENANCE · COLLECTION VALUE INTELLIGENCE', W / 2, 292, { align: 'center' });
 
-  // On mobile, open in new tab instead of download
   const pdfBlob = doc.output('blob');
   const url = URL.createObjectURL(pdfBlob);
   window.open(url, '_blank');
