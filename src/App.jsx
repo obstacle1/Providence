@@ -1,9 +1,11 @@
 import { useState, useMemo, useEffect } from "react";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 // ── Supabase config ───────────────────────────────────────────────────────────
 const SUPA_URL = "https://dgtpmshfnttcsqjaxvmy.supabase.co";
 const SUPA_KEY = "sb_publishable_q6Z1JxhnxrRk5c0p4_VfvA_Q6OWi9hF";
+const supabase = createClient(SUPA_URL, SUPA_KEY);
 
 const db = {
   async get(table, query = "") {
@@ -160,7 +162,36 @@ function ConfirmModal({ title, onConfirm, onCancel }) {
   );
 }
 
+// ── Login Screen ──────────────────────────────────────────────────────────────
+function LoginScreen() {
+  const [loading, setLoading] = useState(false);
+  const handleLogin = async () => {
+    setLoading(true);
+    await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin },
+    });
+  };
+  return (
+    <div style={{ background:C.bg, minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"Georgia, serif", padding:20 }}>
+      <div style={{ textAlign:"center", maxWidth:280 }}>
+        <div style={{ color:C.gold, fontSize:24, letterSpacing:"0.18em", marginBottom:6 }}>PROVENANCE</div>
+        <div style={{ color:C.dim, fontSize:11, letterSpacing:"0.16em", textTransform:"uppercase", marginBottom:40 }}>Collection Value Intelligence</div>
+        <button
+          style={mkBtn("primary", { fontSize:12, padding:"12px 28px", letterSpacing:"0.12em", opacity: loading ? 0.6 : 1 })}
+          onClick={handleLogin}
+          disabled={loading}
+        >
+          {loading ? "Redirecting…" : "Sign in with Google"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
+  const [session,      setSession]      = useState(null);
+  const [authLoading,  setAuthLoading]  = useState(true);
   const [objects,      setObjects]      = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [selectedId,   setSelectedId]   = useState(null);
@@ -180,8 +211,21 @@ export default function App() {
   const notify = (msg) => { setToast(msg); setTimeout(()=>setToast(null), 2800); };
   const selected = objects.find((o)=>o.id===selectedId);
 
+  // ── Auth state ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setAuthLoading(false);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
   // ── Load from Supabase on mount ──────────────────────────────────────────
   useEffect(()=>{
+    if (!session) return;
     (async () => {
       try {
         const objs = await db.get("objects", "?order=created_at.asc");
@@ -194,7 +238,7 @@ export default function App() {
       } catch(e) { console.error(e); }
       setLoading(false);
     })();
-  }, []);
+  }, [session]);
 
   // ── Portfolio chart ──────────────────────────────────────────────────────
   const portfolioChart = useMemo(()=>{
@@ -266,6 +310,15 @@ export default function App() {
 
   const NAV = [{ key:"portfolio", label:"Portfolio" }, { key:"object", label:"Object", disabled:!selected }, { key:"add", label:"+ Add" }, { key:"import", label:"CSV" }];
 
+  // ── Auth gate ─────────────────────────────────────────────────────────────
+  if (authLoading) return (
+    <div style={{ background:C.bg, minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"Georgia, serif" }}>
+      <div style={{ color:C.dim, fontSize:12 }}>Loading…</div>
+    </div>
+  );
+
+  if (!session) return <LoginScreen />;
+
   if (loading) return (
     <div style={{ background:C.bg, minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"Georgia, serif" }}>
       <div style={{ textAlign:"center" }}>
@@ -281,9 +334,12 @@ export default function App() {
 
       {/* Header */}
       <div style={{ borderBottom:`1px solid ${C.border}`, padding:"14px 16px", boxSizing:"border-box", width:"100%" }}>
-        <div style={{ marginBottom:11 }}>
-          <div style={{ fontSize:17, letterSpacing:"0.14em", color:C.gold }}>PROVENANCE</div>
-          <div style={{ fontSize:9, letterSpacing:"0.2em", color:C.dim, textTransform:"uppercase", marginTop:2 }}>Collection Value Intelligence</div>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:11 }}>
+          <div>
+            <div style={{ fontSize:17, letterSpacing:"0.14em", color:C.gold }}>PROVENANCE</div>
+            <div style={{ fontSize:9, letterSpacing:"0.2em", color:C.dim, textTransform:"uppercase", marginTop:2 }}>Collection Value Intelligence</div>
+          </div>
+          <button style={mkBtn("ghost", { fontSize:9, padding:"5px 10px", marginTop:2 })} onClick={() => supabase.auth.signOut()}>Sign out</button>
         </div>
         <div style={{ display:"flex", gap:5, overflowX:"auto", paddingBottom:1, WebkitOverflowScrolling:"touch" }}>
           {NAV.map(({ key, label, disabled })=>(
