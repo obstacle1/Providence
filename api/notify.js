@@ -19,7 +19,7 @@ export default async function handler(req, res) {
           <div style="color:#FFF1E5;font-size:9px;letter-spacing:0.2em;margin-top:3px;opacity:0.8;">COLLECTION · VALUE · INTELLIGENCE</div>
         </div>
         <div style="padding:32px 28px;">
-          <p style="color:#33302E;font-size:16px;margin:0 0 8px;">Dear ${clientName},</p>
+          <p style="color:#33302E;font-size:16px;margin:0 0 8px;">Dear ${clientName.trim()},</p>
           <p style="color:#66605C;font-size:14px;line-height:1.7;margin:0 0 24px;">
             Your collection has been updated. <strong style="color:#33302E;">${objectTitle}</strong> has a new valuation of <strong style="color:#990F3D;">${fmt(newValue)}</strong>.
           </p>
