@@ -738,7 +738,7 @@ function LoginScreen() {
   );
 }
 
-function ClientsView({ clients, objects, onSelectClient, session, onClientAdded, onDeleteClient }) {
+function ClientsView({ clients, objects, onSelectClient, session, onClientAdded, onDeleteClient, clientSort }) {
   const [showAdd, setShowAdd] = useState(false);
   const [newClient, setNewClient] = useState({ name:"", email:"" });
   const [saving, setSaving] = useState(false);
@@ -752,9 +752,16 @@ function ClientsView({ clients, objects, onSelectClient, session, onClientAdded,
   };
   return (
     <div>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
         <div style={{ fontSize:17 }}>Clients</div>
-        <button style={mkBtn("secondary", { fontSize:10, padding:"5px 12px" })} onClick={()=>setShowAdd(v=>!v)}>{showAdd?"Cancel":"+ New Client"}</button>
+        <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+          <select style={{ ...mkInput({ padding:"5px 8px", fontSize:10, width:"auto" }) }} value={clientSort} onChange={e=>setClientSort(e.target.value)}>
+            <option value="value">By Value</option>
+            <option value="name">By Name</option>
+            <option value="objects">By Objects</option>
+          </select>
+          <button style={mkBtn("secondary", { fontSize:10, padding:"5px 12px" })} onClick={()=>setShowAdd(v=>!v)}>{showAdd?"Cancel":"+ New Client"}</button>
+        </div>
       </div>
       {showAdd && (
         <div style={CARD}>
@@ -766,7 +773,13 @@ function ClientsView({ clients, objects, onSelectClient, session, onClientAdded,
         </div>
       )}
       {clients.length === 0 && !showAdd && <div style={{ textAlign:"center", padding:"40px 0", color:C.dim, fontSize:13 }}>No clients yet. Add your first client above.</div>}
-      {clients.map(client => {
+      {[...clients].sort((a,b)=>{
+        const aObjs=objects.filter(o=>o.client_id===a.id), bObjs=objects.filter(o=>o.client_id===b.id);
+        if(clientSort==="value") return calcPortStats(bObjs).cur - calcPortStats(aObjs).cur;
+        if(clientSort==="name") return a.name.localeCompare(b.name);
+        if(clientSort==="objects") return bObjs.length - aObjs.length;
+        return 0;
+      }).map(client => {
         const clientObjs = objects.filter(o => o.client_id === client.id);
         const stats = calcPortStats(clientObjs);
         return (
@@ -905,6 +918,8 @@ function AdvisorApp() {
   const [editObj,       setEditObj]       = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("All");
+  const [clientSort, setClientSort] = useState("value");
   const [teamMembers, setTeamMembers] = useState([]);
   const [teamId, setTeamId] = useState(null);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -1150,7 +1165,7 @@ function AdvisorApp() {
           {portfolioChart.length>0&&<div style={CARD}><div style={SEC}>Portfolio Value Over Time</div><ResponsiveContainer width="100%" height={190}><LineChart data={portfolioChart} margin={{ top:4, right:4, left:0, bottom:0 }}><CartesianGrid strokeDasharray="3 3" stroke={C.active} /><XAxis dataKey="date" tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={{ stroke:C.border }} /><YAxis tickFormatter={fmtShort} tick={{ fill:C.dim, fontSize:10 }} tickLine={false} axisLine={false} width={44} /><Tooltip content={<ChartTip />} /><Line type="monotone" dataKey="total" stroke={C.gold} strokeWidth={2} dot={{ fill:C.gold, r:3 }} activeDot={{ r:5 }} name="Total Value" /></LineChart></ResponsiveContainer></div>}
           {portfolioObjects.length===0&&<div style={{ textAlign:"center", padding:"40px 0", color:C.dim, fontSize:13 }}>No objects yet. Tap <span style={{ color:C.gold }}>+ Add</span> to get started.</div>}
           {portfolioObjects.length>0&&<>
-          <div style={{ marginBottom:12 }}>
+          <div style={{ marginBottom:8 }}>
             <input
               style={mkInput({ fontSize:13, padding:"9px 12px" })}
               placeholder="Search objects, makers…"
@@ -1158,10 +1173,15 @@ function AdvisorApp() {
               onChange={e=>setSearch(e.target.value)}
             />
           </div>
-          <div style={SEC}>All Objects</div>{portfolioObjects.filter(obj => !search || obj.title.toLowerCase().includes(search.toLowerCase()) || obj.artist.toLowerCase().includes(search.toLowerCase())).map((obj)=>{ const s=[...obj.valuations].sort((a,b)=>a.date.localeCompare(b.date)), cur=s[s.length-1]?.value||0, fst=s[0]?.value||0, g=fst?pct(fst,cur):null; return (<div key={obj.id} style={{ borderRadius:2, marginBottom:4, background:C.card, border:`1px solid ${C.border}`, boxSizing:"border-box", overflow:"hidden" }}><div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px", cursor:"pointer" }} onClick={()=>{ setSelectedId(obj.id); setView("object"); }}><div style={{ flex:1, minWidth:0, paddingRight:10 }}><div style={{ fontSize:14, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{obj.title}</div><div style={{ fontSize:11, color:C.dim, marginTop:2 }}>{obj.artist} · {obj.year}</div></div><div style={{ textAlign:"right", flexShrink:0 }}><div style={{ fontSize:14, color:C.gold }}>{fmt(cur)}</div>{g!==null&&<div style={{ fontSize:11, color:cur>=fst?C.green:C.red, marginTop:1 }}>{cur>=fst?"▲":"▼"} {Math.abs(g)}%</div>}</div></div>{obj.client_id&&<div style={{ borderTop:`1px solid ${C.border}`, padding:"4px 12px", background:C.inner }}><span style={{ fontSize:10, color:C.dim }}>{clients.find(c=>c.id===obj.client_id)?.name}</span></div>}</div>); })}</>}
+          <div style={{ display:"flex", gap:6, overflowX:"auto", paddingBottom:8, WebkitOverflowScrolling:"touch", marginBottom:4 }}>
+            {["All",...new Set(portfolioObjects.map(o=>o.category).filter(Boolean))].map(cat=>(
+              <button key={cat} onClick={()=>setCategoryFilter(cat)} style={{ background:categoryFilter===cat?C.gold:"transparent", color:categoryFilter===cat?C.bg:C.muted, border:`1px solid ${categoryFilter===cat?C.gold:C.border}`, padding:"4px 10px", borderRadius:20, fontSize:10, letterSpacing:"0.08em", whiteSpace:"nowrap", cursor:"pointer", fontFamily:"Georgia, serif", flexShrink:0 }}>{cat}</button>
+            ))}
+          </div>
+          <div style={SEC}>All Objects</div>{portfolioObjects.filter(obj => (categoryFilter==='All' || obj.category===categoryFilter) && (!search || obj.title.toLowerCase().includes(search.toLowerCase()) || obj.artist.toLowerCase().includes(search.toLowerCase()))).map((obj)=>{ const s=[...obj.valuations].sort((a,b)=>a.date.localeCompare(b.date)), cur=s[s.length-1]?.value||0, fst=s[0]?.value||0, g=fst?pct(fst,cur):null; return (<div key={obj.id} style={{ borderRadius:2, marginBottom:4, background:C.card, border:`1px solid ${C.border}`, boxSizing:"border-box", overflow:"hidden" }}><div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px", cursor:"pointer" }} onClick={()=>{ setSelectedId(obj.id); setView("object"); }}><div style={{ flex:1, minWidth:0, paddingRight:10 }}><div style={{ fontSize:14, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{obj.title}</div><div style={{ fontSize:11, color:C.dim, marginTop:2 }}>{obj.artist} · {obj.year}</div></div><div style={{ textAlign:"right", flexShrink:0 }}><div style={{ fontSize:14, color:C.gold }}>{fmt(cur)}</div>{g!==null&&<div style={{ fontSize:11, color:cur>=fst?C.green:C.red, marginTop:1 }}>{cur>=fst?"▲":"▼"} {Math.abs(g)}%</div>}</div></div>{obj.client_id&&<div style={{ borderTop:`1px solid ${C.border}`, padding:"4px 12px", background:C.inner }}><span style={{ fontSize:10, color:C.dim }}>{clients.find(c=>c.id===obj.client_id)?.name}</span></div>}</div>); })}</>}
         </>)}
 
-        {view==="clients"&&!selectedClient&&<ClientsView clients={clients} objects={objects} session={session} onSelectClient={c=>setSelectedClient(c)} onClientAdded={c=>setClients(p=>[...p,c])} onDeleteClient={deleteClient} />}
+        {view==="clients"&&!selectedClient&&<ClientsView clients={clients} objects={objects} session={session} onSelectClient={c=>setSelectedClient(c)} onClientAdded={c=>setClients(p=>[...p,c])} onDeleteClient={deleteClient} clientSort={clientSort} />}
         {view==="clients"&&selectedClient&&<ClientPortfolioView client={selectedClient} objects={objects} onBack={()=>setSelectedClient(null)} onSelectObject={obj=>{ setSelectedId(obj.id); setView("object"); }} />}
 
         {view==="object"&&selected&&(<>
