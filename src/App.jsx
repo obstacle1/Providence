@@ -862,6 +862,10 @@ function AdvisorApp() {
   const [editObj,       setEditObj]       = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [search, setSearch] = useState("");
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [teamId, setTeamId] = useState(null);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviting, setInviting] = useState(false);
 
   const notify = (msg) => { setToast(msg); setTimeout(()=>setToast(null), 2800); };
   const selected = objects.find((o)=>o.id===selectedId);
@@ -883,6 +887,19 @@ function AdvisorApp() {
         const teams = await db.get("teams", `?member_emails=cs.{"${userEmail}"}`);
         const ownerTeam = teams?.[0];
         const loadAsId = ownerTeam ? ownerTeam.owner_id : advisorId;
+        
+        // Load team info for owner
+        if (!ownerTeam) {
+          const myTeams = await db.get("teams", `?owner_id=eq.${advisorId}`);
+          if (myTeams?.[0]) {
+            setTeamMembers(myTeams[0].member_emails || []);
+            setTeamId(myTeams[0].id);
+          } else {
+            // Create a team for this advisor if they don't have one
+            const newTeam = await db.post("teams", { owner_id: advisorId, member_emails: [] });
+            if (newTeam?.[0]) setTeamId(newTeam[0].id);
+          }
+        }
 
         const [objs, vals, cls] = await Promise.all([
           db.get("objects", `?advisor_id=eq.${loadAsId}&order=created_at.asc`),
@@ -959,6 +976,25 @@ function AdvisorApp() {
     setEditMode(false); setEditObj(null); notify("Object updated");
   };
 
+  const inviteMember = async () => {
+    if (!inviteEmail || !teamId) return;
+    const email = inviteEmail.toLowerCase().trim();
+    setInviting(true);
+    await db.patch("teams", teamId, { member_emails: [...teamMembers, email] });
+    setTeamMembers(p => [...p, email]);
+    setInviteEmail("");
+    setInviting(false);
+    notify(`${email} invited!`);
+  };
+
+  const removeMember = async (email) => {
+    if (!teamId) return;
+    const updated = teamMembers.filter(e => e !== email);
+    await db.patch("teams", teamId, { member_emails: updated });
+    setTeamMembers(updated);
+    notify("Member removed");
+  };
+
   const deleteClient = async (clientId) => {
     await db.delete("clients", clientId);
     setClients(p => p.filter(c => c.id !== clientId));
@@ -986,7 +1022,7 @@ function AdvisorApp() {
     setImportText(""); setImportMapped(null); setImportStep(1); setView("portfolio"); notify("Import complete");
   };
 
-  const NAV = [{ key:"portfolio", label:"Portfolio" }, { key:"clients", label:"Clients" }, { key:"object", label:"Object", disabled:!selected }, { key:"add", label:"+ Add" }, { key:"import", label:"CSV" }];
+  const NAV = [{ key:"portfolio", label:"Portfolio" }, { key:"clients", label:"Clients" }, { key:"object", label:"Object", disabled:!selected }, { key:"add", label:"+ Add" }, { key:"import", label:"CSV" }, { key:"team", label:"Team" }];
 
   if (authLoading) return <div style={{ background:C.bg, minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"Georgia, serif" }}><div style={{ color:C.dim, fontSize:12 }}>Loading…</div></div>;
   if (!session) return <LoginScreen />;
@@ -1147,6 +1183,37 @@ function AdvisorApp() {
               {clients.length>0&&<div style={{ gridColumn:"1/-1" }}><label style={LBL}>Assign to Client (optional)</label><select style={mkInput()} value={newObj.client_id} onChange={e=>setNewObj({...newObj,client_id:e.target.value})}><option value="">— Unassigned —</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>}
             </div>
             <button style={mkBtn("primary")} onClick={addObject}>Add to Collection</button>
+          </div>
+        </div>}
+
+        {view==="team"&&<div>
+          <div style={{ fontSize:17, marginBottom:18 }}>Team</div>
+          <div style={CARD}>
+            <div style={SEC}>Invite Member</div>
+            <div style={{ display:"flex", gap:8, marginBottom:16 }}>
+              <input style={mkInput({ flex:1 })} type="email" placeholder="colleague@email.com" value={inviteEmail} onChange={e=>setInviteEmail(e.target.value)} />
+              <button style={mkBtn("primary", { opacity:inviting?0.6:1, whiteSpace:"nowrap" })} onClick={inviteMember} disabled={inviting}>{inviting?"Inviting…":"Invite"}</button>
+            </div>
+            <div style={{ fontSize:11, color:C.dim, lineHeight:1.6 }}>
+              Invited members can sign in with their Google account and access your full workspace.
+            </div>
+          </div>
+          {teamMembers.length > 0 && (
+            <div style={CARD}>
+              <div style={SEC}>Current Members</div>
+              {teamMembers.map((email, i) => (
+                <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"10px 0", borderBottom:`1px solid ${C.border}` }}>
+                  <div style={{ fontSize:13, color:C.text }}>{email}</div>
+                  <button style={mkBtn("danger", { fontSize:9, padding:"3px 10px" })} onClick={()=>removeMember(email)}>Remove</button>
+                </div>
+              ))}
+            </div>
+          )}
+          {teamMembers.length === 0 && (
+            <div style={{ textAlign:"center", padding:"30px 0", color:C.dim, fontSize:13 }}>No team members yet. Invite someone above.</div>
+          )}
+          <div style={{ fontSize:11, color:C.dim, lineHeight:1.6, marginTop:8 }}>
+            <span style={{ color:C.text }}>Your account:</span> {session.user.email}
           </div>
         </div>}
 
