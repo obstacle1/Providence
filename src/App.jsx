@@ -330,6 +330,53 @@ function ComparablesPanel({ object }) {
   );
 }
 
+function ValuationLedger({ valuations, onDelete, onUpdate }) {
+  const [editingId, setEditingId] = useState(null);
+  const [editData, setEditData] = useState({});
+  const sorted = [...valuations].sort((a,b)=>b.date.localeCompare(a.date));
+
+  const startEdit = (v) => { setEditingId(v._id); setEditData({ date:v.date, value:v.value, note:v.note||"" }); };
+  const cancelEdit = () => { setEditingId(null); setEditData({}); };
+  const saveEdit = async () => { await onUpdate(editingId, editData); setEditingId(null); };
+
+  return (<>
+    {sorted.map((v,i,arr)=>{
+      const prev=arr[i+1], chg=prev?v.value-prev.value:null, chgP=prev?pct(prev.value,v.value):null;
+      const isEditing = editingId === v._id;
+      return (
+        <div key={v._id||i} style={{ borderBottom:`1px solid ${C.border}`, padding:"10px 0", background:i%2?C.inner+"44":"transparent" }}>
+          {isEditing ? (
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:8 }}>
+              <div><label style={LBL}>Date</label><input type="date" style={mkInput({ fontSize:12, padding:"6px 8px" })} value={editData.date} onChange={e=>setEditData({...editData,date:e.target.value})} /></div>
+              <div><label style={LBL}>Value</label><input type="number" style={mkInput({ fontSize:12, padding:"6px 8px" })} value={editData.value} onChange={e=>setEditData({...editData,value:e.target.value})} /></div>
+              <div style={{ gridColumn:"1/-1" }}><label style={LBL}>Note</label><input style={mkInput({ fontSize:12, padding:"6px 8px" })} value={editData.note} onChange={e=>setEditData({...editData,note:e.target.value})} /></div>
+              <div style={{ gridColumn:"1/-1", display:"flex", gap:8 }}>
+                <button style={mkBtn("primary",{ fontSize:9, padding:"4px 10px" })} onClick={saveEdit}>Save</button>
+                <button style={mkBtn("ghost",{ fontSize:9, padding:"4px 10px" })} onClick={cancelEdit}>Cancel</button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10 }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:14, color:C.gold, marginBottom:2 }}>{fmt(v.value)}</div>
+                <div style={{ fontSize:11, color:C.dim }}>{fmtDate(v.date)}</div>
+                {v.note&&<div style={{ fontSize:11, color:C.muted, marginTop:1 }}>{v.note}</div>}
+              </div>
+              <div style={{ textAlign:"right", flexShrink:0 }}>
+                {chg!==null?(<><div style={{ fontSize:13, color:chg>=0?C.green:C.red }}>{chg>=0?"▲":"▼"} {fmt(Math.abs(chg))}</div><div style={{ fontSize:11, color:chg>=0?C.green:C.red, marginTop:1 }}>{Math.abs(chgP)}%</div></>):(<div style={{ fontSize:11, color:C.dim }}>Acquisition</div>)}
+                <div style={{ display:"flex", gap:6, marginTop:6, justifyContent:"flex-end" }}>
+                  <button style={mkBtn("ghost",{ fontSize:9, padding:"3px 8px" })} onClick={()=>startEdit(v)}>Edit</button>
+                  <button style={mkBtn("danger",{ fontSize:9, padding:"3px 8px" })} onClick={()=>onDelete(v._id)}>Delete</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    })}
+  </>);
+}
+
 function ConfirmModal({ title, onConfirm, onCancel }) {
   return (
     <div style={{ position:"fixed", inset:0, background:"#000000BB", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
@@ -537,6 +584,18 @@ function AdvisorApp() {
     setNewVal({ date:"", value:"", note:"" }); setShowAddVal(false); notify("Valuation saved");
   };
 
+  const deleteValuation = async (valId) => {
+    await db.delete("valuations", valId);
+    setObjects(p=>p.map(o=>o.id===selectedId?{...o,valuations:o.valuations.filter(v=>v._id!==valId)}:o));
+    notify("Valuation deleted");
+  };
+
+  const updateValuation = async (valId, data) => {
+    await db.patch("valuations", valId, { date:data.date, value:+data.value, note:data.note });
+    setObjects(p=>p.map(o=>o.id===selectedId?{...o,valuations:o.valuations.map(v=>v._id===valId?{...v,...data,value:+data.value}:v)}:o));
+    notify("Valuation updated");
+  };
+
   const saveEdit = async () => {
     const body = { title:editObj.title, artist:editObj.artist, medium:editObj.medium, year:+editObj.year||null, category:editObj.category, client_id:editObj.client_id||null };
     await db.patch("objects", selectedId, body);
@@ -653,7 +712,7 @@ function AdvisorApp() {
                 </div>
                 <button style={mkBtn("primary")} onClick={addValuation}>Save</button>
               </div>}
-              {[...selected.valuations].sort((a,b)=>b.date.localeCompare(a.date)).map((v,i,arr)=>{ const prev=arr[i+1], chg=prev?v.value-prev.value:null, chgP=prev?pct(prev.value,v.value):null; return (<div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:10, padding:"10px 0", borderBottom:`1px solid ${C.border}`, background:i%2?C.inner+"88":"transparent" }}><div style={{ flex:1, minWidth:0 }}><div style={{ fontSize:14, color:C.gold, marginBottom:2 }}>{fmt(v.value)}</div><div style={{ fontSize:11, color:C.dim }}>{fmtDate(v.date)}</div>{v.note&&<div style={{ fontSize:11, color:C.muted, marginTop:1 }}>{v.note}</div>}</div><div style={{ textAlign:"right", flexShrink:0 }}>{chg!==null?(<><div style={{ fontSize:13, color:chg>=0?C.green:C.red }}>{chg>=0?"▲":"▼"} {fmt(Math.abs(chg))}</div><div style={{ fontSize:11, color:chg>=0?C.green:C.red, marginTop:1 }}>{Math.abs(chgP)}%</div></>):(<div style={{ fontSize:11, color:C.dim }}>Acquisition</div>)}</div></div>); })}
+              <ValuationLedger valuations={selected.valuations} onDelete={deleteValuation} onUpdate={updateValuation} />
             </div>
           </>)}
         </>)}
