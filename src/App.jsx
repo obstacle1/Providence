@@ -940,7 +940,7 @@ function AdvisorApp() {
       });
       const data = await res.json();
       if (data.urls && data.urls.length > 0) {
-        setImgResults(data.urls);
+        console.log("Image URLs:", data.urls); setImgResults(data.urls);
       } else {
         notify("No images found");
       }
@@ -1235,8 +1235,11 @@ function AdvisorApp() {
                       <div style={{ fontSize:9, letterSpacing:"0.18em", color:C.dim, marginBottom:8, textTransform:"uppercase" }}>Select an image</div>
                       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
                         {imgResults.map((url,i)=>(
-                          <div key={i} onClick={()=>{ setEditObj({...editObj,image_url:url}); setImgResults([]); }} style={{ cursor:"pointer", borderRadius:2, overflow:"hidden", border:`2px solid ${C.border}`, aspectRatio:"1", background:C.inner }}>
-                            <img src={url} alt="" style={{ width:"100%", height:"100%", objectFit:"contain", display:"block" }} onError={e=>e.target.parentNode.style.display="none"} />
+                          <div key={i} onClick={()=>{ setEditObj({...editObj,image_url:url}); setImgResults([]); }} style={{ cursor:"pointer", borderRadius:2, overflow:"hidden", border:`2px solid ${C.border}`, aspectRatio:"1", background:C.inner, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                            <img src={url} alt="" style={{ width:"100%", height:"100%", objectFit:"contain", display:"block" }}
+                              onError={e=>{ e.target.style.display="none"; e.target.parentNode.innerHTML='<div style="font-size:9px;color:#999;text-align:center;padding:8px">Image unavailable</div>'; }}
+                              onLoad={e=>{ e.target.parentNode.style.border="2px solid #8B1A2A"; }}
+                            />
                           </div>
                         ))}
                       </div>
