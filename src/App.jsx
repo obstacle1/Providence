@@ -445,7 +445,7 @@ function PublicClientView() {
           // Object detail
           <div>
             <button style={mkBtn("ghost",{ fontSize:10, padding:"5px 12px", marginBottom:14 })} onClick={()=>setSelectedObj(null)}>← Collection</button>
-            {selectedObj.image_url && <div style={{ marginBottom:14, borderRadius:3, overflow:"hidden", border:`1px solid ${C.border}` }}><img src={selectedObj.image_url} alt={selectedObj.title} style={{ width:"100%", maxHeight:280, objectFit:"cover", display:"block" }} /></div>}
+            {selectedObj.image_url && <div style={{ marginBottom:14, borderRadius:3, border:`1px solid ${C.border}`, background:"#f5f0eb", display:"flex", alignItems:"center", justifyContent:"center", minHeight:200 }}><img src={selectedObj.image_url} alt={selectedObj.title} style={{ maxWidth:"100%", maxHeight:280, objectFit:"contain", display:"block" }} /></div>}
             <div style={{ marginBottom:14 }}>
               <div style={{ fontSize:22, lineHeight:1.2, marginBottom:4 }}>{selectedObj.title}</div>
               <div style={{ fontSize:12, color:C.muted }}>{selectedObj.artist}{selectedObj.year?` · ${selectedObj.year}`:""}{selectedObj.medium?` · ${selectedObj.medium}`:""}</div>
@@ -1225,7 +1225,7 @@ function AdvisorApp() {
                   <div style={{ gridColumn:"1/-1" }}><label style={LBL}>Assign to Client</label><select style={mkInput()} value={editObj.client_id||""} onChange={e=>setEditObj({...editObj,client_id:e.target.value||null})}><option value="">— Unassigned —</option>{clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
                   <div style={{ gridColumn:"1/-1" }}>
                     <label style={LBL}>Photo</label>
-                    {editObj.image_url && <img src={editObj.image_url} alt="" style={{ width:"100%", maxHeight:180, objectFit:"cover", borderRadius:2, marginBottom:8, display:"block" }} />}
+                    {editObj.image_url && <div style={{ background:"#f5f0eb", borderRadius:2, marginBottom:8, display:"flex", alignItems:"center", justifyContent:"center", minHeight:180 }}><img src={editObj.image_url} alt="" style={{ maxWidth:"100%", maxHeight:220, objectFit:"contain", display:"block" }} /></div>}
                     <input type="file" accept="image/*" style={{ display:"none" }} id="img-upload" onChange={async(e)=>{ const file=e.target.files[0]; if(!file) return; try { const url=await uploadImage(file,selectedId); setEditObj({...editObj,image_url:url}); } catch(err) { alert("Upload failed: "+err.message); } }} />
                     <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
                       <label htmlFor="img-upload" style={{ ...mkBtn("secondary",{ fontSize:10, padding:"7px 14px", display:"inline-block", cursor:"pointer" }) }}>{editObj.image_url?"📷 Change Photo":"📷 Add Photo"}</label>
@@ -1265,7 +1265,7 @@ function AdvisorApp() {
             </div>
             {selected.image_url && (
               <div style={{ marginBottom:16, borderRadius:3, overflow:"hidden", border:`1px solid ${C.border}` }}>
-                <img src={selected.image_url} alt={selected.title} style={{ width:"100%", maxHeight:260, objectFit:"cover", display:"block" }} />
+                <img src={selected.image_url} alt={selected.title} style={{ maxWidth:"100%", maxHeight:300, objectFit:"contain", display:"block", margin:"0 auto" }} />
               </div>
             )}
             {objStats&&<div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:16 }}>
