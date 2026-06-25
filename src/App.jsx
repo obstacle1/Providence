@@ -924,8 +924,38 @@ function AdvisorApp() {
   const [teamId, setTeamId] = useState(null);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviting, setInviting] = useState(false);
+  const [imgSearching, setImgSearching] = useState(false);
+  const [imgResults, setImgResults] = useState([]);
 
   const notify = (msg) => { setToast(msg); setTimeout(()=>setToast(null), 2800); };
+
+  const findImage = async (title, artist) => {
+    setImgSearching(true);
+    setImgResults([]);
+    try {
+      const query = `${title} ${artist} on white background`;
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 1000,
+          tools: [{ type: "web_search_20250305", name: "web_search" }],
+          messages: [{ role: "user", content: `Search for images of: ${query}. Return a JSON array of exactly 4 image URLs from your search results. Only return URLs that end in .jpg, .jpeg, .png, or .webp. Respond with ONLY a JSON array like: ["url1","url2","url3","url4"]` }]
+        })
+      });
+      const data = await res.json();
+      const textBlock = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("");
+      const match = textBlock.match(/\[.*?\]/s);
+      if (match) {
+        const urls = JSON.parse(match[0]).filter(u=>u&&typeof u==="string"&&u.startsWith("http"));
+        setImgResults(urls.slice(0,4));
+      }
+    } catch(e) {
+      notify("Image search failed");
+    }
+    setImgSearching(false);
+  };
   const selected = objects.find((o)=>o.id===selectedId);
 
   useEffect(() => {
@@ -1204,7 +1234,21 @@ function AdvisorApp() {
                     <label style={LBL}>Photo</label>
                     {editObj.image_url && <img src={editObj.image_url} alt="" style={{ width:"100%", maxHeight:180, objectFit:"cover", borderRadius:2, marginBottom:8, display:"block" }} />}
                     <input type="file" accept="image/*" style={{ display:"none" }} id="img-upload" onChange={async(e)=>{ const file=e.target.files[0]; if(!file) return; try { const url=await uploadImage(file,selectedId); setEditObj({...editObj,image_url:url}); } catch(err) { alert("Upload failed: "+err.message); } }} />
-                    <label htmlFor="img-upload" style={{ ...mkBtn("secondary",{ fontSize:10, padding:"7px 14px", display:"inline-block", cursor:"pointer" }) }}>{editObj.image_url?"📷 Change Photo":"📷 Add Photo"}</label>
+                    <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
+                      <label htmlFor="img-upload" style={{ ...mkBtn("secondary",{ fontSize:10, padding:"7px 14px", display:"inline-block", cursor:"pointer" }) }}>{editObj.image_url?"📷 Change Photo":"📷 Add Photo"}</label>
+                      <button style={mkBtn("secondary",{ fontSize:10, padding:"7px 14px" })} onClick={()=>{ setImgResults([]); findImage(editObj.title, editObj.artist); }} disabled={imgSearching}>{imgSearching?"Searching…":"🔍 Find Image"}</button>
+                    </div>
+                    {imgResults.length>0&&<div style={{ marginTop:10 }}>
+                      <div style={{ fontSize:9, letterSpacing:"0.18em", color:C.dim, marginBottom:8, textTransform:"uppercase" }}>Select an image</div>
+                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+                        {imgResults.map((url,i)=>(
+                          <div key={i} onClick={()=>{ setEditObj({...editObj,image_url:url}); setImgResults([]); }} style={{ cursor:"pointer", borderRadius:2, overflow:"hidden", border:`2px solid ${C.border}`, aspectRatio:"1", background:C.inner }}>
+                            <img src={url} alt="" style={{ width:"100%", height:"100%", objectFit:"contain", display:"block" }} onError={e=>e.target.parentNode.style.display="none"} />
+                          </div>
+                        ))}
+                      </div>
+                      <button style={{ ...mkBtn("ghost",{ fontSize:10, padding:"5px 10px", marginTop:8 }) }} onClick={()=>setImgResults([])}>Clear</button>
+                    </div>}
                   </div>
                   <div><StarRating label="Enjoyment Index" value={editObj.enjoyment_index} onChange={v=>setEditObj({...editObj,enjoyment_index:v})} /></div>
                   <div><StarRating label="Condition Rating" value={editObj.condition_rating} onChange={v=>setEditObj({...editObj,condition_rating:v})} /></div>
