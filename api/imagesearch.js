@@ -6,31 +6,25 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
+  const apiKey = process.env.GOOGLE_CSE_KEY;
+  const cx = process.env.GOOGLE_CSE_CX;
+  if (!apiKey || !cx) return res.status(500).json({ error: "Search not configured" });
+
   const { title, artist } = req.body || {};
   if (!title) return res.status(400).json({ error: "title is required" });
 
-  const query = `${title} ${artist || ""}`.trim();
-  const encoded = encodeURIComponent(query);
+  const query = `${title} ${artist || ""} on white background`.trim();
 
   try {
-    // Unsplash Source API - no key needed, returns redirect to real image
-    // Generate 4 different seeds for variety
-    const seeds = [1, 2, 3, 4];
-    const urls = seeds.map(seed => 
-      `https://source.unsplash.com/400x400/?${encoded}&sig=${seed}`
-    );
+    const url = `https://www.googleapis.com/customsearch/v1?key=${apiKey}&cx=${cx}&q=${encodeURIComponent(query)}&searchType=image&num=4&imgSize=large&safe=active`;
+    const apiRes = await fetch(url);
+    const data = await apiRes.json();
 
-    // Resolve the redirects to get actual image URLs
-    const resolved = await Promise.all(urls.map(async (url) => {
-      try {
-        const r = await fetch(url, { redirect: "follow" });
-        return r.url || url;
-      } catch {
-        return url;
-      }
-    }));
+    if (!apiRes.ok) return res.status(500).json({ error: "Search API error", details: data });
 
-    return res.status(200).json({ urls: resolved });
+    const urls = (data.items || []).map(item => item.link).filter(u => u && u.startsWith("http")).slice(0, 4);
+
+    return res.status(200).json({ urls });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
