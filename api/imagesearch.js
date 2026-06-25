@@ -6,68 +6,74 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: "API key not configured" });
-
   const { title, artist } = req.body || {};
   if (!title) return res.status(400).json({ error: "title is required" });
 
-  const query = `${title} ${artist || ""} on white background`.trim();
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: "API key not configured" });
+
+  const query = `${title} ${artist || ""}`.trim();
 
   try {
-    // Use Gemini to generate realistic image search URLs via Google image search knowledge
-    const prompt = `You are helping find product/auction style images for a luxury collection management app.
+    // Use Gemini with Google Search grounding to find real image URLs
+    const prompt = `Search Google Images for: "${query} on white background"
 
-Find 4 high-quality image URLs for: "${query}"
+I need exactly 4 direct image URLs (ending in .jpg, .jpeg, .png, or .webp) showing this object on a white or clean neutral background. Prefer auction house (Christie's, Sotheby's, Phillips, Bonhams), manufacturer press photos, or museum catalog images.
 
-Requirements:
-- Images should show the object on a white or neutral background
-- Prefer auction house images (Christie's, Sotheby's, Phillips, Bonhams), manufacturer press photos, or museum images
-- URLs must be direct image links ending in .jpg, .jpeg, .png, or .webp
-- URLs must be real, publicly accessible images
-
-Return ONLY a raw JSON array of 4 image URL strings. No markdown, no explanation.
-Example format: ["https://example.com/image1.jpg","https://example.com/image2.jpg","https://example.com/image3.jpg","https://example.com/image4.jpg"]`;
+Return ONLY a JSON array of 4 direct image URLs. No explanation, no markdown.
+["url1","url2","url3","url4"]`;
 
     const apiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          tools: [{ google_search: {} }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 500 },
+          tools: [{ googleSearch: {} }],
+          generationConfig: { temperature: 0.1, maxOutputTokens: 600 },
         }),
       }
     );
 
     const data = await apiRes.json();
-    if (!apiRes.ok) return res.status(500).json({ error: "Gemini error", details: data });
 
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    const cleaned = text.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
-
-    let urls = [];
-    try {
-      const match = cleaned.match(/\[.*\]/s);
-      if (match) urls = JSON.parse(match[0]);
-    } catch (_) {}
-
-    // Filter to valid-looking image URLs
-    urls = (urls || [])
-      .filter(u => typeof u === "string" && u.startsWith("http") && /\.(jpg|jpeg|png|webp)/i.test(u))
+    // Extract image URLs from grounding metadata if available
+    const groundingChunks = data?.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+    const groundingUrls = groundingChunks
+      .map(c => c?.web?.uri || "")
+      .filter(u => u && /\.(jpg|jpeg|png|webp)/i.test(u))
       .slice(0, 4);
 
-    // If Gemini didn't return usable URLs, fall back to known auction house search patterns
-    if (urls.length === 0) {
-      const encoded = encodeURIComponent(`${title} ${artist || ""}`);
-      urls = [
-        `https://www.christies.com/img/LotImages/2023/CKS/2023_CKS_22007_0001_000(${encoded}).jpg`,
-      ];
+    if (groundingUrls.length >= 2) {
+      return res.status(200).json({ urls: groundingUrls });
     }
 
-    return res.status(200).json({ urls, query });
+    // Fall back to text response parsing
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const match = text.match(/\[[\s\S]*?\]/);
+    let urls = [];
+    if (match) {
+      try { urls = JSON.parse(match[0]); } catch (_) {}
+    }
+    urls = urls.filter(u => typeof u === "string" && u.startsWith("http") && /\.(jpg|jpeg|png|webp)/i.test(u)).slice(0, 4);
+
+    if (urls.length > 0) return res.status(200).json({ urls });
+
+    // Last resort: Wikimedia Commons API for known collectibles/art
+    const wikiQuery = encodeURIComponent(query);
+    const wikiRes = await fetch(
+      `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${wikiQuery}&gsrnamespace=6&prop=imageinfo&iiprop=url&format=json&gsrlimit=4&origin=*`
+    );
+    const wikiData = await wikiRes.json();
+    const wikiUrls = Object.values(wikiData?.query?.pages || {})
+      .map(p => p?.imageinfo?.[0]?.url)
+      .filter(u => u && /\.(jpg|jpeg|png|webp)/i.test(u))
+      .slice(0, 4);
+
+    if (wikiUrls.length > 0) return res.status(200).json({ urls: wikiUrls });
+
+    return res.status(200).json({ urls: [], message: "No images found" });
 
   } catch (err) {
     return res.status(500).json({ error: err.message });
