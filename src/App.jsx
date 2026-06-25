@@ -933,23 +933,16 @@ function AdvisorApp() {
     setImgSearching(true);
     setImgResults([]);
     try {
-      const query = `${title} ${artist} on white background`;
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch("/api/imagesearch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 1000,
-          tools: [{ type: "web_search_20250305", name: "web_search" }],
-          messages: [{ role: "user", content: `Search for images of: ${query}. Return a JSON array of exactly 4 image URLs from your search results. Only return URLs that end in .jpg, .jpeg, .png, or .webp. Respond with ONLY a JSON array like: ["url1","url2","url3","url4"]` }]
-        })
+        body: JSON.stringify({ title, artist })
       });
       const data = await res.json();
-      const textBlock = (data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("");
-      const match = textBlock.match(/\[.*?\]/s);
-      if (match) {
-        const urls = JSON.parse(match[0]).filter(u=>u&&typeof u==="string"&&u.startsWith("http"));
-        setImgResults(urls.slice(0,4));
+      if (data.urls && data.urls.length > 0) {
+        setImgResults(data.urls);
+      } else {
+        notify("No images found");
       }
     } catch(e) {
       notify("Image search failed");
