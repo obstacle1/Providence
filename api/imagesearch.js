@@ -6,8 +6,8 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const apiKey = process.env.GOOGLE_CSE_KEY || "AIzaSyDxVnDt_0M40HZhWEr6e7eF05Vvp95UUxk";
-  const cx = process.env.GOOGLE_CSE_CX || "e7403bad2277c459a";
+  const apiKey = "AIzaSyDxVnDt_0M40HZhWEr6e7eF05Vvp95UUxk";
+  const cx = "e7403bad2277c459a";
 
   const { title, artist } = req.body || {};
   if (!title) return res.status(400).json({ error: "title is required" });
@@ -19,12 +19,13 @@ export default async function handler(req, res) {
     const apiRes = await fetch(url);
     const data = await apiRes.json();
 
-    if (!apiRes.ok) return res.status(500).json({ error: "Search API error", details: data });
+    // Return full response for debugging
+    if (!apiRes.ok) return res.status(200).json({ urls: [], debug: data });
 
     const urls = (data.items || []).map(item => item.link).filter(u => u && u.startsWith("http")).slice(0, 4);
 
-    return res.status(200).json({ urls });
+    return res.status(200).json({ urls, debug: { total: data.searchInformation?.totalResults, itemCount: data.items?.length } });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(200).json({ urls: [], debug: { error: err.message } });
   }
 }
