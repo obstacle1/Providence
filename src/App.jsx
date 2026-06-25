@@ -1092,7 +1092,7 @@ function AdvisorApp() {
     const grouped = {};
     importMapped.forEach((row)=>{ const key=`${row.title}|${row.artist}`; if(!grouped[key]) grouped[key]={ title:row.title, artist:row.artist, medium:row.medium||"", year:+(row.year||0)||null, category:row.category||"Painting", vals:[] }; if(row.date&&row.value) grouped[key].vals.push({ date:row.date, value:+row.value, note:row.note||"" }); });
     for (const g of Object.values(grouped)) {
-      const rows = await db.post("objects", { title:g.title, artist:g.artist, medium:g.medium, year:g.year, category:g.category });
+      const rows = await db.post("objects", { title:g.title, artist:g.artist, medium:g.medium, year:g.year, category:g.category, advisor_id:session.user.id });
       const obj = rows[0]; if (!obj) continue;
       const valRows = g.vals.length ? await db.post("valuations", g.vals.map((v)=>({ ...v, object_id:obj.id }))) : [];
       setObjects((p)=>[...p, { ...obj, valuations:(valRows||[]).map((v)=>({ date:v.date, value:+v.value, note:v.note||"", _id:v.id })) }]);
