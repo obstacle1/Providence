@@ -9,41 +9,28 @@ export default async function handler(req, res) {
   const { title, artist } = req.body || {};
   if (!title) return res.status(400).json({ error: "title is required" });
 
-  const query = encodeURIComponent(`${title} ${artist || ""} on white background`.trim());
+  const query = `${title} ${artist || ""}`.trim();
+  const encoded = encodeURIComponent(query);
 
   try {
-    // Use Bing Image Search scrape (no API key needed)
-    const response = await fetch(
-      `https://www.bing.com/images/search?q=${query}&form=HDRSC2&first=1&tsc=ImageHoverTitle`,
-      {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Accept": "text/html,application/xhtml+xml",
-          "Accept-Language": "en-US,en;q=0.9",
-        }
-      }
+    // Unsplash Source API - no key needed, returns redirect to real image
+    // Generate 4 different seeds for variety
+    const seeds = [1, 2, 3, 4];
+    const urls = seeds.map(seed => 
+      `https://source.unsplash.com/400x400/?${encoded}&sig=${seed}`
     );
 
-    const html = await response.text();
+    // Resolve the redirects to get actual image URLs
+    const resolved = await Promise.all(urls.map(async (url) => {
+      try {
+        const r = await fetch(url, { redirect: "follow" });
+        return r.url || url;
+      } catch {
+        return url;
+      }
+    }));
 
-    // Extract image URLs from Bing's murl (media URL) fields
-    const murlMatches = [...html.matchAll(/"murl":"([^"]+)"/g)];
-    const urls = murlMatches
-      .map(m => m[1])
-      .filter(u => u && u.startsWith("http") && /\.(jpg|jpeg|png|webp)/i.test(u))
-      .slice(0, 4);
-
-    if (urls.length > 0) return res.status(200).json({ urls });
-
-    // Fallback: extract from imgurl parameter
-    const imgurlMatches = [...html.matchAll(/imgurl=([^&"]+)/g)];
-    const fallbackUrls = imgurlMatches
-      .map(m => decodeURIComponent(m[1]))
-      .filter(u => u && u.startsWith("http") && /\.(jpg|jpeg|png|webp)/i.test(u))
-      .slice(0, 4);
-
-    return res.status(200).json({ urls: fallbackUrls });
-
+    return res.status(200).json({ urls: resolved });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
